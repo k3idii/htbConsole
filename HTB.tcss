@@ -1,0 +1,583 @@
+$secondary: #9fef00;
+$secondary-lighten-1: #ddff99;
+$background: #111927;
+$background-darken-1: #171717;
+$background-lighten-1: #1a2332;
+$border: #3d5276;
+$border-inverse: #111927;
+$border-title-color: #a4b1cd
+$color: #a4b1cd;
+$color-easy: #90cd3f;
+$color-medium: #ffb83e;
+$color-hard: #fe0000;  
+  
+  
+Header {
+    color: $secondary;
+    background: $background-darken-1;
+    text-style: bold;
+}
+
+
+#container-main { 
+    height: 80%; 
+
+} 
+#container-logs { 
+    
+    height: 20%; overflow-y: scroll;
+    
+          border: panel $border;
+            border-title-color: $border-title-color;
+            border-title-style: bold;
+            border-title-align: right;    
+}
+
+
+
+#player_information_container {
+    layout: horizontal;
+    height: auto;
+    min-height: 20;
+    width: 100%;
+    background: $background;
+
+    #player_stats {
+        width: 40%;
+        height: auto;
+
+        Container#player_stats_container {
+            max-width: 100%;
+            height: auto;
+            margin: 0 1 1 0;
+            padding: 1 0;
+            background: $background-lighten-1;
+            # border-top: outer $border;
+            # border-bottom: tall #000 30%;
+            border: panel $border;
+            border-title-color: $border-title-color;
+            border-title-style: bold;
+            border-title-align: right;
+            overflow-y: auto;
+
+            #player_rank_label,
+            #player_rank_progress_label {
+                padding: 0 1;
+                width: 100%;
+            }
+
+            #player_rank_progress {                
+                padding: 0 1;
+                width: 100%;
+
+                #bar {
+                    width: 90%;
+                    padding-right: 1;
+                    .bar--bar {
+                        color: $secondary;
+                    }
+                }
+
+                #percentage {
+                    width: 10%;
+                    text-align: right;
+                }
+            }
+
+            #player_rank_progress_label {
+                width: 100%;
+                text-align: right;
+            }
+
+            #player_stats_table {
+                width: 100%;
+                padding: 1 1 0 1;
+            }
+        }
+    }
+    
+
+
+    #player_activity {
+        width: 60%;
+
+ 
+
+        DataTable > .datatable--header {
+            background: $background-lighten-1;
+        }
+
+        DataTable > .datatable--header-hover {
+            background: $background-lighten-1;
+            color: #fff;
+         }
+
+        #player_activity_container {
+            width: 100%;
+            padding: 1 0;
+            
+            border: panel $border;
+            border-title-color: $border-title-color;
+            border-title-style: bold;
+            border-title-align: right;
+        }
+    }
+}
+
+
+
+
+#cont__challs {
+
+    width: 1fr;
+    height: 1fr;
+    background: $background;
+    color: $color;
+
+    #chall_filter_control {
+        height: auto;
+        width: 100%;
+        dock: top;
+    }
+
+    #chall_content {
+        width: 1fr;
+        height: 1fr;
+        layout: horizontal;
+    }
+
+    #chall_list_pane {
+        height: 1fr;
+        width: 49%;
+    }
+
+
+    #chall_details_pane {
+        width: 49%;
+        height: 1fr;
+        background: $background-lighten-1;
+        border: panel $border;
+        border-title-color: $border-title-color;
+        border-title-style: bold;
+        border-title-align: left;
+        color: $color;
+        overflow-y: scroll;
+       
+ 
+
+        #chall_submit_flag_container {
+            layout: horizontal;  
+            #chall_submit_flag_input {
+                width: 70%;
+            }
+            #chall_submit_flag_button {
+                width: 30%;
+            }
+        }
+        #chall_control_buttons {
+            layout: horizontal;   
+        }
+
+
+    }
+}
+
+
+#cont__sherlocks {
+    width: 1fr;
+    height: 1fr;
+    background: $background;
+    color: $color;
+
+    #sherlock_control {
+        height: auto;
+        width: 100%;
+        dock: top;
+    }
+
+    #sherlock_content {
+        width: 1fr;
+        height: 1fr;
+        layout: horizontal;
+    }
+
+    #sherlock_list_pane {
+        height: 1fr;
+        width: 49%;
+
+        #sherlock_control {
+            height: auto;
+        }
+
+        #sherlock_table {
+            width: 100%;
+
+            & > .datatable--header {
+                background: $background-lighten-1;
+            }
+
+            & > .datatable--header-hover {
+                background: $background-lighten-1;
+                color: #fff;
+            }
+        }
+    }
+
+    #sherlock_details_pane {
+        width: 49%;
+        height: 1fr;
+        background: $background-lighten-1;
+        border: panel $border;
+        border-title-color: $border-title-color;
+        border-title-style: bold;
+        border-title-align: left;
+        color: $color;
+        overflow-y: scroll;
+
+        #sherlock_tasks_layout {
+            width: 1fr;
+            height: 1fr;
+            layout: horizontal;
+
+            #sherlock_tasks_list_pane {
+                width: 30%;
+                height: 1fr;
+
+                #sherlock_tasks_table {
+                    width: 100%;
+                    height: 1fr;
+
+                    & > .datatable--header {
+                        background: $background-lighten-1;
+                    }
+                }
+            }
+
+            #sherlock_task_detail_pane {
+                width: 70%;
+                height: 1fr;
+                border-left: panel $border;
+                padding: 0 1;
+
+                #sherlock_task_detail_scroll {
+                    width: 100%;
+                    height: 1fr;
+                }
+
+                #sherlock_task_detail {
+                    width: 100%;
+                    height: auto;
+                    padding: 1;
+                }
+
+                #sherlock_submit_container {
+                    layout: horizontal;
+                    height: 3;
+                    width: 100%;
+
+                    #sherlock_answer_input {
+                        width: 70%;
+                    }
+
+                    #sherlock_submit_button {
+                        width: 30%;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+#cont__machines {
+    layout: horizontal;
+    width: 1fr;
+    height: 1fr;
+    background: $background;
+    color: $color;
+
+
+    #machines_container {
+        height: 1fr;
+        width: 45%;
+        padding: 1 1 0 0;
+        background: $background;
+
+        #machines_tabbed_content {
+            width: 100%;
+
+            CurrentMachines,
+            RetiredMachines,
+            SeasonalMachines {
+                width: 100%;
+                height: 1fr;
+
+                & > .datatable--header {
+                    background: $background-lighten-1;
+                }
+
+                & > .datatable--header-hover {
+                    background: $background-lighten-1;
+                    color: #fff;
+                }
+            }
+        }
+    }
+
+    #machine_control {
+        width: 50%;
+        height: 1fr;
+        margin: 1 0 1 1;
+        background: $background-lighten-1;
+        # border-top: outer $border;
+        # border-bottom: tall #000 30%;
+        border: panel $border;
+        border-title-color: $border-title-color;
+        border-title-style: bold;
+        border-title-align: left;
+        color: $color;
+
+        #machine_details {
+            padding: 1 1 0 1;
+        }
+
+        #machine_notes_path {
+            padding: 0 1;
+            color: $border-title-color;
+        }
+
+        #machine_notes_editor {
+            height: 1fr;
+        }
+
+        #machine_feedback_container {
+            display: none;
+
+            Rule {
+                width: 100%;
+                padding: 0 1;  
+                margin: 0; 
+                color: $border;
+            }
+        
+            Label {
+                color: $border-title-color;
+                width: 100%;
+                text-align: center;
+            }
+        
+            #feedback_container {
+                layout: horizontal;
+                height: 3;
+                width: 100%;
+                padding: 1 2 0 2;
+        
+                #feedback_sparkline_easy {
+                    width: 30%;
+                    .sparkline--min-color {
+                        color: $color-easy ;
+                    }
+            
+                    .sparkline--max-color {
+                        color: $color-easy;
+                    }
+                }
+        
+                #feedback_sparkline_medium {
+                    width: 40%;
+                    .sparkline--min-color {
+                        color: $color-medium;
+                    }
+            
+                    .sparkline--max-color {
+                        color: $color-medium;
+                    }
+                }
+        
+                #feedback_sparkline_hard {
+                    width: 30%;
+                    .sparkline--min-color {
+                        color: $color-hard;
+                    }
+            
+                    .sparkline--max-color {
+                        color: $color-hard;
+                    }
+                }
+            } 
+        }
+
+        #machine_control_buttons {
+            dock: bottom;
+            height: auto;
+
+            #submit_flag_container {
+                width: 100%;
+                height: auto;
+                layout: horizontal;
+                display: none;
+
+        
+                #submit_flag_input {
+                    width: 70%;
+                }
+        
+                Button#submit_flag_button {
+                    min-width: 0;
+                    width: 30%;
+                    margin-right: 1;
+                }
+            }
+
+            Button#spawn_machine_button,
+            Button#stop_machine_button,
+            Button#reset_machine_button {
+                width: 100%;
+                margin: 0 1;
+                display: none;
+            }
+        }
+
+        &.inactive {
+            border-title-color: $border-title-color;
+        
+            #machine_feedback_container {
+                display: block;
+            }
+        
+            #machine_control_buttons {
+                Button#spawn_machine_button {
+                    display: block;
+                }
+                Button#stop_machine_button,
+                Button#reset_machine_button{
+                    display: none;
+                }
+            }
+        }
+
+        &.active {
+            border-title-color: $secondary;
+        
+            #machine_feedback_container {
+                display: block;
+            }
+        
+            #machine_control_buttons {
+                display: block;
+        
+                #submit_flag_container,
+                Button#stop_machine_button,
+                Button#reset_machine_button {
+                    display: block;
+                }
+        
+                Button#spawn_machine_button {
+                    display: none;
+                }                
+            }
+        }
+
+        Button#spawn_machine_button,
+        Button#submit_flag_button {
+            background: $secondary;
+            border-top: tall $secondary-lighten-1;
+            border-bottom: tall $secondary 30%;
+
+            &:hover {
+                background: $secondary 90%;
+            }
+        }
+
+        Button#stop_machine_button {
+            background: #c6383c;
+            border-top: tall #a6595c;
+            border-bottom: tall #c6383c 30%;
+        
+            &:hover {
+                background: #c6383c 90%;
+            }
+        }
+    }
+}
+
+
+
+
+
+ PlayerActivity DataTable,
+ CurrentMachines,
+ RetiredMachines,
+ SeasonalMachines,
+ #sherlock_table,
+ #player_stats_container {
+    color: $color;
+    scrollbar-background: #111;
+    scrollbar-background-active: transparent;
+    scrollbar-background-hover: transparent;
+    scrollbar-color: $secondary 50%;
+    scrollbar-color-active: $secondary;
+    scrollbar-color-hover: $secondary 70%;
+    scrollbar-size: 0 1;
+}
+
+
+#cont__settings {
+    background: $background;
+    color: $color;
+    padding: 1 2;
+
+    #settings_main {
+        height: auto;
+    }
+
+    #settings_api,
+    #settings_workdir,
+    #settings_extract,
+    #settings_terminal,
+    #settings_vpn {
+        height: auto;
+        margin-bottom: 1;
+        padding: 1;
+        background: $background-lighten-1;
+        border: panel $border;
+        border-title-color: $border-title-color;
+        border-title-style: bold;
+    }
+
+    #settings_api_title,
+    #settings_workdir_title,
+    #settings_extract_title,
+    #settings_terminal_title,
+    #settings_vpn_title {
+        width: 100%;
+        margin-bottom: 1;
+    }
+
+    #settings_api_info,
+    #settings_vpn_info {
+        width: 100%;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+
+    #settings_cache_row,
+    #settings_burp_row {
+        height: 3;
+        width: 100%;
+        padding: 0 1;
+
+        Label {
+            width: 1fr;
+            padding-top: 1;
+        }
+
+        Switch {
+            width: auto;
+        }
+    }
+
+    Button {
+        margin: 0 1 1 1;
+    }
+}

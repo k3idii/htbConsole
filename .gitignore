@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[codz]
+*$py.class
+*.so
+
+# Virtual env
+.venv/
+
+# Tokens / secrets
+token.txt
+token*.txt
+.env
+*.key
+
+# Runtime data
+req_cache.json
+work/
+local/
+
+# Temp / dev
+_tmp/
+changes.md
+.*/
+DOCS/
