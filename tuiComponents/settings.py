@@ -19,7 +19,8 @@ class ContainerSettings(VerticalScroll):
                     yield Label("Enable request cache")
                     yield Switch(id="settings_cache_toggle", value=False)
                 with Horizontal(id="settings_burp_row"):
-                    yield Label("Burp proxy (127.0.0.1:8080)")
+                    yield Label("Burp proxy")
+                    yield Input(placeholder="http://127.0.0.1:8080", id="settings_burp_input")
                     yield Switch(id="settings_burp_toggle", value=False)
                 yield Button("Clear cache", id="settings_clear_cache_button")
                 yield Button("Refresh all data", id="settings_refresh_button", variant="primary")
@@ -54,7 +55,9 @@ class ContainerSettings(VerticalScroll):
             self.query_one("#settings_cache_toggle", Switch).value = bool(api.USE_CACHE)
 
             import os
-            self.query_one("#settings_burp_toggle", Switch).value = bool(os.environ.get("USE_BURP"))
+            burp_addr = os.environ.get("USE_BURP", "")
+            self.query_one("#settings_burp_input", Input).value = burp_addr
+            self.query_one("#settings_burp_toggle", Switch).value = bool(burp_addr)
 
             self.query_one("#settings_workdir_input", Input).value = self.app.WORKDIR
             self.query_one("#settings_zip_password_input", Input).value = self.app.ZIP_PASSWORD
@@ -117,16 +120,21 @@ class ContainerSettings(VerticalScroll):
     @on(Switch.Changed, "#settings_burp_toggle")
     async def toggle_burp(self, event: Switch.Changed):
         import os
+        import httpx
         import httpApi
-        if event.value:
-            os.environ["USE_BURP"] = "1"
-            import httpx
-            httpApi.burp_proxy = httpx.Proxy("http://127.0.0.1:8080")
+        addr = self.query_one("#settings_burp_input", Input).value.strip()
+        if event.value and addr:
+            os.environ["USE_BURP"] = addr
+            httpApi.burp_proxy = httpx.Proxy(addr)
         else:
             os.environ.pop("USE_BURP", None)
             httpApi.burp_proxy = None
+            if event.value and not addr:
+                self.app.notify("Enter proxy address first", severity="warning")
+                self.query_one("#settings_burp_toggle", Switch).value = False
+                return
         await self.app.API.close()
-        self.app.post_message(EventMsg(f"Burp proxy {'enabled' if event.value else 'disabled'}"))
+        self.app.post_message(EventMsg(f"Burp proxy {'enabled: ' + addr if event.value else 'disabled'}"))
 
     @on(Button.Pressed, "#settings_clear_cache_button")
     def clear_cache(self, event):

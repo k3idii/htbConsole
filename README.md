@@ -60,7 +60,7 @@ Optional environment variables:
 | `HTB_TOKEN` | — | HackTheBox platform API token |
 | `CTF_TOKEN` | — | CTF platform API token |
 | `HTB_WORKDIR` | `./work` | Directory for downloads, notes, and task files |
-| `USE_BURP` | — | Set to `1` to proxy requests through Burp (127.0.0.1:8080) |
+| `USE_BURP` | — | Proxy address for Burp (e.g. `http://127.0.0.1:8080`) |
 
 ## Usage
 

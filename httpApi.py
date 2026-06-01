@@ -30,8 +30,8 @@ class ChallengeCategories:
   def __repr__(self):
     return f"ChallengeCategories({list(self.name_to_id.keys())})"
      
-# for debugging via burp — set env USE_BURP=1 to enable
-burp_proxy = httpx.Proxy("http://127.0.0.1:8080") if os.environ.get("USE_BURP") else None
+_burp_addr = os.environ.get("USE_BURP")
+burp_proxy = httpx.Proxy(_burp_addr) if _burp_addr else None
 
 class HTBApiSession:
   APITOKEN : str = ""
