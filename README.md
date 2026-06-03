@@ -49,7 +49,7 @@ export HTB_TOKEN="your-htb-api-token"
 export CTF_TOKEN="your-ctf-api-token"
 ```
 
-Get your HTB token from: [https://app.hackthebox.com/profile/settings](https://app.hackthebox.com/account-settings) (App Token)
+Get your HTB token from: [https://app.hackthebox.com/account-settings](https://app.hackthebox.com/account-settings) (App Token)
 
 Get your CTF token from: https://ctf.hackthebox.com (inspect requests after login)
 
