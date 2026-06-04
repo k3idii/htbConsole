@@ -3,13 +3,15 @@ import re
 from datetime import datetime
 from textual import on
 from textual.app import ComposeResult
-from textual.widgets import Static, Button, Sparkline, Label, Rule, Input, TabbedContent, TabPane, TextArea
+from textual.widgets import Static, Button, Sparkline, Label, Rule, Input, TabbedContent, TabPane
 from textual.containers import Container
 from textual.reactive import Reactive
 
 from rich.table import Table
 
 from .messages import DebugMsg, ErrorMsg, EventMsg
+from .notes_editor import NotesEditor
+from .confirm_dir import ensure_task_dir
 
 
 _clean_re = re.compile('[^0-9a-zA-Z_]+')
@@ -17,34 +19,6 @@ _clean_re = re.compile('[^0-9a-zA-Z_]+')
 def _machine_dir(name, workdir="./work"):
     clean = _clean_re.sub('', name.lower())
     return os.path.join(workdir, 'machines', clean)
-
-
-class MachineNotesEditor(TextArea):
-    language = "markdown"
-    FILE: str = None
-
-    BINDINGS = [("ctrl+s", "save_file")]
-
-    def action_save_file(self):
-        if self.FILE is None:
-            return
-        open(self.FILE, "w").write(self.text)
-        self.app.post_message(EventMsg(f"SAVED {self.FILE}"))
-
-    def set_filepath(self, fp):
-        if self.FILE is not None:
-            self.action_save_file()
-        self.FILE = fp
-        os.makedirs(os.path.dirname(fp), exist_ok=True)
-        if not os.path.exists(fp):
-            open(fp, "w").write("")
-        with open(fp, "r") as f:
-            self.text = f.read()
-        self.app.post_message(EventMsg(f"Loaded notes from {self.FILE}"))
-
-    def on_unmount(self):
-        self.action_save_file()
-
 
 
 class MachineDetails(Static):
@@ -98,7 +72,7 @@ class MachineDetails(Static):
                     yield Button("Reset Machine", id="reset_machine_button", variant="default")
             with TabPane("Notes", id="machine_notes_tab"):
                 yield Label("Notes  <ctrl+s> to save", id="machine_notes_path")
-                yield MachineNotesEditor("", id="machine_notes_editor")
+                yield NotesEditor("", id="machine_notes_editor")
 
     async def on_mount(self):
         self.run_worker(self._fetch_active_machine())
@@ -122,14 +96,16 @@ class MachineDetails(Static):
         self.border_title = f"{self.selected_machine_data['name']}::{self.selected_machine_id}"
         self.handle_display_controls()
         self.query_one("#machine_details").update(self.make_machine_details())
-        self._load_notes()
-
-    def _load_notes(self):
         name = self.selected_machine_data.get("name", "unknown")
         workdir = getattr(self.app, 'WORKDIR', './work')
-        mdir = _machine_dir(name, workdir)
-        note_path = os.path.join(mdir, "NOTES.md")
-        editor = self.query_one("#machine_notes_editor", MachineNotesEditor)
+        self._task_dir = _machine_dir(name, workdir)
+        ensure_task_dir(self.app, self._task_dir, self._on_dir_ready)
+
+    def _on_dir_ready(self, path):
+        if path is None:
+            return
+        note_path = os.path.join(path, "NOTES.md")
+        editor = self.query_one("#machine_notes_editor", NotesEditor)
         editor.set_filepath(note_path)
         self.query_one("#machine_notes_path").update(f"Notes: {note_path}  <ctrl+s> to save")
 

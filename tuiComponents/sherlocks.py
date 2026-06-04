@@ -10,6 +10,7 @@ from rich.table import Table
 
 from .messages import DebugMsg, ErrorMsg, EventMsg
 from .downloader import async_download_and_extract
+from .confirm_dir import ensure_task_dir
 
 sherlock_difficulty_map = {
     "Very Easy": "#90ff3f",
@@ -185,14 +186,22 @@ class SherlockDetails(Container):
             except Exception:
                 pass
 
+            workdir = getattr(self.app, 'WORKDIR', './work')
+            self._task_dir = _sherlock_dir(self.sherlock_data.get("name", "unknown"), workdir)
+
             self._render_info(description)
             self._render_tasks()
 
             self.border_title = f"{self.CURRENT_ID} :: {self.sherlock_data.get('name', '?')}"
             self.loading = False
             self.refresh()
+
+            ensure_task_dir(self.app, self._task_dir, self._on_dir_ready)
         except Exception as e:
             self.post_message(ErrorMsg(e))
+
+    def _on_dir_ready(self, path):
+        self._dir_created = path is not None
 
     def _render_error(self, message):
         self.query_one("#sherlock_text", Markdown).update(f"## Error\n\n{message}")
@@ -327,8 +336,11 @@ class SherlockDetails(Container):
 
     async def _bg_download(self, url):
         try:
-            workdir = getattr(self.app, 'WORKDIR', './work')
-            sdir = _sherlock_dir(self.sherlock_data.get("name", "unknown"), workdir)
+            sdir = getattr(self, '_task_dir', None)
+            if not sdir:
+                workdir = getattr(self.app, 'WORKDIR', './work')
+                sdir = _sherlock_dir(self.sherlock_data.get("name", "unknown"), workdir)
+            os.makedirs(sdir, exist_ok=True)
             chall_data = {
                 "real_dir_name": os.path.abspath(sdir),
                 "file_name": "sherlock.zip",

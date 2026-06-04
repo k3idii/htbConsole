@@ -22,6 +22,7 @@ class CTFApp(App):
     WORKDIR: str = os.environ.get("HTB_WORKDIR", "./work")
     ZIP_PASSWORD: str = "hackthebox"
     UNPACK_CMD: str = "7z -o./unpacked/ -p{password} x {file}"
+    AUTO_CREATE_DIR: bool = True
 
     CSS_PATH = "CTF.tcss"
 
@@ -40,6 +41,8 @@ class CTFApp(App):
         self._ctf_challenges = {}
         self._ctf_cats = {}
 
+
+    # TODO : deduplicate this code with tuiHTB.py by creatgin master windows class shared
     def action_logs(self):
         self.logs_size = 0 if self.logs_size else 1
         if self.logs_size:

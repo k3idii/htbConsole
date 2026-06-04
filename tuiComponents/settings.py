@@ -1,11 +1,25 @@
 from textual import on
-from textual.widgets import Static, Button, Label, Switch, Input
+from textual.widgets import Static, Button, Label, Switch, Input, TextArea
 from textual.containers import Container, VerticalScroll, Horizontal
 from textual.app import ComposeResult
 
 from rich.table import Table
 
 from .messages import DebugMsg, EventMsg, ErrorMsg
+
+
+DEFAULT_CHALL_CUSTOM_ACTIONS = """\
+{% if play_info.status == 'ready' %}
+{% for port in play_info.ports %}
+{% set url = 'cmd://netcat '~play_info.ip~' '~port%}
+- [netcat {{play_info.ip}}:{{port}}]({{url|urlencode}})
+- [http {{play_info.ip}}:{{port}}](http://{{play_info.ip}}:{{port}}/)
+{% endfor %}
+{% endif %}
+{% set vscode = 'cmd://code '~real_dir_name %}
+- [Open vsCode here]({{ vscode|urlencode }})
+- [nmap](cmd://nmap%20{{play_info.ip}}>foo.txt)
+"""
 
 
 class ContainerSettings(VerticalScroll):
@@ -28,6 +42,9 @@ class ContainerSettings(VerticalScroll):
             with Container(id="settings_workdir"):
                 yield Label("[b]Work Directory", id="settings_workdir_title")
                 yield Input(value="", placeholder="./work", id="settings_workdir_input")
+                with Horizontal(id="settings_autocreate_row"):
+                    yield Label("Auto-create task directories")
+                    yield Switch(id="settings_autocreate_toggle", value=True)
 
             with Container(id="settings_extract"):
                 yield Label("[b]Extraction", id="settings_extract_title")
@@ -38,6 +55,23 @@ class ContainerSettings(VerticalScroll):
             with Container(id="settings_terminal"):
                 yield Label("[b]Terminal Emulator", id="settings_terminal_title")
                 yield Input(value="", placeholder="/usr/bin/xfce4-terminal --hold -x ", id="settings_terminal_input")
+
+            with Container(id="settings_actions"):
+                yield Label("[b]Custom Actions (Challenges)", id="settings_actions_title")
+                yield Label(
+                    "Jinja2 template rendered in challenge info. "
+                    "Use cmd:// links to run commands in terminal.",
+                    id="settings_actions_help",
+                )
+                yield Label(
+                    "Variables: name, difficulty, play_info.ip, play_info.ports, "
+                    "play_info.status, real_dir_name, local_dir_name, category_name",
+                    id="settings_actions_vars",
+                )
+                yield TextArea("", language="markdown", id="settings_actions_editor")
+                with Horizontal(id="settings_actions_buttons"):
+                    yield Button("Apply", id="settings_actions_apply_button", variant="primary")
+                    yield Button("Reset to default", id="settings_actions_reset_button")
 
             with Container(id="settings_vpn"):
                 yield Label("[b]VPN / Connection", id="settings_vpn_title")
@@ -60,9 +94,12 @@ class ContainerSettings(VerticalScroll):
             self.query_one("#settings_burp_toggle", Switch).value = bool(burp_addr)
 
             self.query_one("#settings_workdir_input", Input).value = self.app.WORKDIR
+            self.query_one("#settings_autocreate_toggle", Switch).value = getattr(self.app, 'AUTO_CREATE_DIR', True)
             self.query_one("#settings_zip_password_input", Input).value = self.app.ZIP_PASSWORD
             self.query_one("#settings_unpack_cmd_input", Input).value = self.app.UNPACK_CMD
             self.query_one("#settings_terminal_input", Input).value = self.app.TERMINAL
+
+            self.query_one("#settings_actions_editor", TextArea).text = getattr(self.app, 'CUSTOM_ACTIONS', '')
 
             self._refresh_api_info()
             await self._refresh_vpn_info()
@@ -85,7 +122,7 @@ class ContainerSettings(VerticalScroll):
         table.add_row("Cache entries", str(len(api.CACHE)))
         table.add_row("Cache enabled", "Yes" if api.USE_CACHE else "No")
 
-        cats = api.CHALLENGE_CATEGORIES
+        cats = getattr(self.app, '_challenge_categories', None)
         if cats:
             table.add_row("Categories", str(len(cats.name_to_id)))
 
@@ -152,6 +189,11 @@ class ContainerSettings(VerticalScroll):
         self._refresh_api_info()
         self.app.post_message(EventMsg("Data refreshed"))
 
+    @on(Switch.Changed, "#settings_autocreate_toggle")
+    def toggle_autocreate(self, event: Switch.Changed):
+        self.app.AUTO_CREATE_DIR = event.value
+        self.app.post_message(EventMsg(f"Auto-create directories {'enabled' if event.value else 'disabled'}"))
+
     @on(Input.Submitted, "#settings_zip_password_input")
     def update_zip_password(self, event: Input.Submitted):
         self.app.ZIP_PASSWORD = event.value
@@ -180,6 +222,26 @@ class ContainerSettings(VerticalScroll):
         if val:
             self.app.TERMINAL = val
             self.app.post_message(EventMsg(f"Terminal set to: {val}"))
+
+    @on(Button.Pressed, "#settings_actions_apply_button")
+    def apply_actions(self, event):
+        import jinja2
+        src = self.query_one("#settings_actions_editor", TextArea).text
+        try:
+            jinja2.Template(src.strip())
+        except jinja2.TemplateSyntaxError as e:
+            self.app.notify(f"Template error: {e}", severity="error")
+            return
+        self.app.CUSTOM_ACTIONS = src
+        self.app.post_message(EventMsg("Custom actions updated"))
+        self.app.notify("Custom actions applied", timeout=3)
+
+    @on(Button.Pressed, "#settings_actions_reset_button")
+    def reset_actions(self, event):
+        self.app.CUSTOM_ACTIONS = DEFAULT_CHALL_CUSTOM_ACTIONS
+        self.query_one("#settings_actions_editor", TextArea).text = DEFAULT_CHALL_CUSTOM_ACTIONS
+        self.app.post_message(EventMsg("Custom actions reset to default"))
+        self.app.notify("Custom actions reset", timeout=3)
 
     @on(Button.Pressed, "#settings_vpn_refresh_button")
     async def refresh_vpn(self, event):

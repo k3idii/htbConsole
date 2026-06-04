@@ -535,6 +535,7 @@ Header {
     #settings_workdir,
     #settings_extract,
     #settings_terminal,
+    #settings_actions,
     #settings_vpn {
         height: auto;
         margin-bottom: 1;
@@ -549,6 +550,7 @@ Header {
     #settings_workdir_title,
     #settings_extract_title,
     #settings_terminal_title,
+    #settings_actions_title,
     #settings_vpn_title {
         width: 100%;
         margin-bottom: 1;
@@ -562,7 +564,8 @@ Header {
     }
 
     #settings_cache_row,
-    #settings_burp_row {
+    #settings_burp_row,
+    #settings_autocreate_row {
         height: 3;
         width: 100%;
         padding: 0 1;
@@ -575,6 +578,24 @@ Header {
         Switch {
             width: auto;
         }
+    }
+
+    #settings_actions_help,
+    #settings_actions_vars {
+        width: 100%;
+        color: $color 70%;
+        padding: 0 1;
+    }
+
+    #settings_actions_editor {
+        width: 100%;
+        height: 16;
+        margin: 1 0;
+    }
+
+    #settings_actions_buttons {
+        height: auto;
+        width: 100%;
     }
 
     Button {

@@ -5,7 +5,7 @@ import os
 
 from textual.widgets import DataTable
 from httpApi import HTBApiSession
-from textual.widgets import TextArea, Button, Sparkline, Label, DirectoryTree, Input, Select, Markdown, TabbedContent, TabPane
+from textual.widgets import Button, Sparkline, Label, DirectoryTree, Input, Select, Markdown, TabbedContent, TabPane
 
 from textual.screen import ModalScreen
 
@@ -15,10 +15,38 @@ from textual.app import ComposeResult
 
 from .messages import DebugMsg, ErrorMsg, EventMsg
 from .downloader import async_download_and_extract, execute_shell
+from .notes_editor import NotesEditor
+from .confirm_dir import ensure_task_dir
 
-import jinja2 
+import jinja2
 
-# provide : CurrentMachines, SeasonalMachines, RetiredMachines 
+
+class ChallengeCategories:
+
+  def __init__(self) -> None:
+    self.id_to_name = {}
+    self.name_to_id = {}
+
+  async def load(self, api_session):
+    data = await api_session.async_get("/api/v4/challenge/categories/list")
+    for cat in data.get("info", []):
+      cat_id = cat.get("id")
+      cat_name = cat.get("name")
+      self.id_to_name[cat_id] = cat_name
+      self.name_to_id[cat_name] = cat_id
+
+  def __repr__(self):
+    return f"ChallengeCategories({list(self.name_to_id.keys())})"
+
+
+async def _ensure_categories(app):
+  if getattr(app, '_challenge_categories', None) is None:
+    cats = ChallengeCategories()
+    await cats.load(app.API)
+    app._challenge_categories = cats
+    app.post_message(DebugMsg("Loaded challenge categories", cats))
+  return app._challenge_categories
+
 
 chall_difficulty_map = {
   "Very Easy": "#90ff3f",
@@ -30,7 +58,7 @@ chall_difficulty_map = {
 
 pattern1 = re.compile('[^0-9a-zA-Z_]+')
 
-def make_dirname(chall, workdir="./work"):
+def make_dirname(chall, workdir):
   clean = lambda s: pattern1.sub('',s.lower())
   cat  = clean(chall['category_name'])
   dif  = clean(chall['difficulty'])
@@ -39,51 +67,8 @@ def make_dirname(chall, workdir="./work"):
 
 
 DEFAULT_TERMINAL = "/usr/bin/xfce4-terminal --hold -x "
-CUSTOM_ACTIONS = """
-{% if play_info.status == 'ready' %}
-{% for port in play_info.ports %}
-{% set url = 'cmd://netcat '~play_info.ip~' '~port%}
-- [netcat {{play_info.ip}}:{{port}}]({{url|urlencode}})
-- [http {{play_info.ip}}:{{port}}](http://{{play_info.ip}}:{{port}}/)
-{% endfor %}
-{% endif %}
-{% set vscode = 'cmd://code '~real_dir_name %}
-- [Open vsCode here]({{ vscode|urlencode }})
-- [nmap](cmd://nmap%20{{play_info.ip}}>foo.txt)
-"""
 
-class NotesEditor(TextArea):
-  
-  language = "markdown"
-  FILE : str = None
-
-  BINDINGS=[ ("ctrl+s", "save_file") ] 
-
-  def action_save_file(self):
-    if self.FILE is None:
-      return
-    #content = self.text
-    open(self.FILE, "w").write(self.text)
-    self.app.post_message(EventMsg(f"SAVED {self.FILE}"))
-
-  def set_filepath(self, fp):
-    if self.FILE != None:
-      self.action_save_file()
-    
-    self.FILE = fp
-    if not os.path.exists(fp):
-      self.app.post_message(EventMsg(f"Create notes: {self.FILE}"))
-      open(self.FILE,"w").write("")
-      
-
-    with open(self.FILE,"r") as f:
-      self.text = f.read()
-      
-    self.app.post_message(EventMsg(f"Loaded notes from {self.FILE}"))
-
-  def on_unmount(self):
-    self.action_save_file()
-    
+from .settings import DEFAULT_CHALL_CUSTOM_ACTIONS
 
 
 
@@ -121,12 +106,22 @@ class ChallDetails(Container):
     super().__init__(*args, **kwargs)
     self.chall_data = None
     self._writeup_loaded_for = None
-
-    self.action_templates = jinja2.Template(CUSTOM_ACTIONS.strip())
-    # for a in CUSTOM_ACTIONS:
-    # self.action_templates.append( jinja2.Template(a) )
+    self._compiled_actions_src = None
+    self.action_templates = None
  
   
+  def on_mount(self):
+    workdir = getattr(self.app, 'WORKDIR', './work')
+    os.makedirs(workdir, exist_ok=True)
+    self.query_one("#chall_dir_tree", DirectoryTree).path = os.path.abspath(workdir)
+
+  def _get_action_template(self):
+    src = getattr(self.app, 'CUSTOM_ACTIONS', DEFAULT_CHALL_CUSTOM_ACTIONS)
+    if src != self._compiled_actions_src:
+      self._compiled_actions_src = src
+      self.action_templates = jinja2.Template(src.strip())
+    return self.action_templates
+
   def has_active_chall(self) -> bool:
     """Check if there is an active challenge."""
     return self.chall_data is not None
@@ -237,27 +232,31 @@ class ChallDetails(Container):
       data = await self.app.API.async_get(f"/api/v4/challenge/info/{self.CURRENT_ID}", cache_this=0)
       data = data['challenge']
       self.chall_data = data
-      # ENRICH:
       workdir = getattr(self.app, 'WORKDIR', './work')
       self.chall_data['local_dir_name'] = make_dirname(self.chall_data, workdir)
       self.chall_data['real_dir_name'] = os.path.abspath(self.chall_data['local_dir_name'])
-      
-      os.makedirs(self.chall_data['real_dir_name'] , exist_ok=True)
-      
-      # UPDATE UI:
-      self.upadate_title( f"{self.CURRENT_ID} :: {self.chall_data.get('name','!??!?')}" )
-      
+
+      ensure_task_dir(self.app, self.chall_data['real_dir_name'], self._finish_reload_panel)
+    except Exception as e:
+      self.post_message(ErrorMsg(e))
+
+  def _finish_reload_panel(self, path):
+    try:
+      self.chall_data['_dir_exists'] = path is not None
+      self.upadate_title(f"{self.CURRENT_ID} :: {self.chall_data.get('name','!??!?')}")
       self._reload_task_info()
-      self._reload_notes_info()
-      self._reload_files_info()
+      tree = self.query_one("#chall_dir_tree", DirectoryTree)
+      if path is not None:
+        self._reload_notes_info()
+        tree.path = path
+      else:
+        tree.path = getattr(self.app, 'WORKDIR', './work')
+      tree.reload()
       self._reload_cmd()
       self._writeup_loaded_for = None
-      
-      self.query_one("#chall_dir_tree").reload()
       self.loading = False
       self.refresh()
       self.app.post_message(EventMsg(f"ChallDetails::Chall {self.CURRENT_ID} details reloaded."))
-
     except Exception as e:
       self.post_message(ErrorMsg(e))
     
@@ -305,21 +304,15 @@ class ChallDetails(Container):
       
       text += box_text
       text += "\n"
-    
-    #for act in self.action_templates:
-    #  entry = act.render(self.chall_data)
-    #  text += entry + "\n"
-    #  self.app.post_message(DebugMsg("Action -", act, entry))
+
+    text += "\n**Custom actions**\n\n"
     try:
-      text += self.action_templates.render(self.chall_data)
-    except Exception:
-      pass
+      text += self._get_action_template().render(self.chall_data)
+    except Exception as ex:
+      text += f"*Error rendering custom actions: {ex}*"
   
     #self.update_text(text)
     self.query_one("#chall_text", Markdown).update(text)
-
-  def _reload_files_info(self):
-    self.query_one("#chall_dir_tree").path = self.chall_data['local_dir_name']
 
   def _reload_notes_info(self):
     note_file = os.path.join(self.chall_data['local_dir_name'], "NOTES.md")
@@ -452,7 +445,7 @@ class ChallDetails(Container):
         yield NotesEditor("", id="chall_notes_editor")
          
       with TabPane("Files", id=f"tab_chall_files"):
-        yield DirectoryTree("./", id="chall_dir_tree")
+        yield DirectoryTree("./work", id="chall_dir_tree")
       with TabPane("Writeup", id=f"tab_chall_writeup"):
         yield Button("Official PDF", id="chall_writeup_official_button", flat=True)
         yield Markdown(id="chall_writeup_content")
@@ -517,7 +510,8 @@ class ChallFilterScreen(ModalScreen):
     with Container(id="filter_popup"):
       yield Label("Filter Challanges")
       yield Input(placeholder="Challenge name ...", id="chall_search_input")
-      cat_list =  self.app.API.CHALLENGE_CATEGORIES.name_to_id.items()
+      cats = getattr(self.app, '_challenge_categories', None)
+      cat_list = cats.name_to_id.items() if cats else []
       yield Select(
         ( (name, id) for name, id in cat_list ), 
         id="chall_caltegory_selection", 
@@ -619,7 +613,8 @@ class ChallListTable(DataTable):
         continue
       self.chall_data[chall['id']] = chall
       difficulty_color = chall_difficulty_map.get(chall['difficulty'], "#FFFFFF")
-      cat_name = self.app.API.CHALLENGE_CATEGORIES.id_to_name.get(chall['category_id'], "Unknown")
+      cats = getattr(self.app, '_challenge_categories', None)
+      cat_name = cats.id_to_name.get(chall['category_id'], "Unknown") if cats else "Unknown"
       self.add_row(
         str(chall['id']),
         chall['name'],
@@ -673,18 +668,26 @@ class ContainerChallenges(Container):
     ("escape", "focus_list", "Focus list"),
   ]
 
+  async def on_mount(self):
+    self.run_worker(self._load_categories())
+
+  async def _load_categories(self):
+    try:
+      await _ensure_categories(self.app)
+    except Exception as e:
+      self.post_message(ErrorMsg(e))
+
   def action_focus_list(self):
     self.query_one("#chall_table").focus()
-  
+
   def action_filter(self):
     self.app.post_message(EventMsg("Filtering"))
     # ONE WAY :
     self.app.push_screen(ChallFilterScreen(), self.filter_callback)
  
   def filter_callback(self, result):
-    cat_map = {}
-    if self.app.API.CHALLENGE_CATEGORIES:
-      cat_map = self.app.API.CHALLENGE_CATEGORIES.id_to_name
+    cats = getattr(self.app, '_challenge_categories', None)
+    cat_map = cats.id_to_name if cats else {}
     label = result.describe(cat_map)
     self.app.post_message(DebugMsg("Filtering callback", label))
     self.query_one("#chal_filter_label").update(label)

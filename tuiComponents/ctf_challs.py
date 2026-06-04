@@ -6,7 +6,7 @@ from textual.app import ComposeResult
 from textual.screen import ModalScreen
 from textual.widgets import (
     Label, TabbedContent, TabPane,
-    DataTable, Static, Button, Input, Markdown, TextArea
+    DataTable, Static, Button, Input, Markdown
 )
 from textual.containers import Container, VerticalScroll, Horizontal
 
@@ -14,6 +14,8 @@ from rich.table import Table
 
 from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg
 from tuiComponents.downloader import execute_unpack
+from tuiComponents.notes_editor import NotesEditor
+from tuiComponents.confirm_dir import ensure_task_dir
 
 
 CATEGORY_NAMES = {
@@ -72,37 +74,6 @@ class ConfirmDirsScreen(ModalScreen):
         self.dismiss(event.button.id == "confirm_yes")
 
 
-class CTFNotesEditor(TextArea):
-
-    language = "markdown"
-    FILE = None
-
-    BINDINGS = [("ctrl+s", "save_file")]
-
-    def action_save_file(self):
-        if self.FILE is None:
-            return
-        os.makedirs(os.path.dirname(self.FILE), exist_ok=True)
-        with open(self.FILE, "w") as f:
-            f.write(self.text)
-        self.app.post_message(EventMsg(f"SAVED {self.FILE}"))
-
-    def set_filepath(self, fp):
-        if self.FILE is not None:
-            self.action_save_file()
-        self.FILE = fp
-        os.makedirs(os.path.dirname(fp), exist_ok=True)
-        if not os.path.exists(fp):
-            with open(fp, "w") as f:
-                f.write("")
-        with open(fp, "r") as f:
-            self.text = f.read()
-        self.app.post_message(EventMsg(f"Loaded notes from {self.FILE}"))
-
-    def on_unmount(self):
-        self.action_save_file()
-
-
 class CTFChallengesView(Container):
 
     def __init__(self, *args, **kwargs):
@@ -132,7 +103,7 @@ class CTFChallengesView(Container):
                                     yield Button("Submit", id="ctf_flag_submit")
                             with TabPane("Notes", id="tab_ctf_detail_notes"):
                                 yield Label("Notes  <ctrl+s> to save", id="ctf_notes_label")
-                                yield CTFNotesEditor("", id="ctf_notes_editor")
+                                yield NotesEditor("", id="ctf_notes_editor")
             with TabPane("Ranking", id="tab_ctf_ranking"):
                 yield Static(id="ctf_ranking_team_info")
                 yield DataTable(id="ctf_ranking_table")
@@ -329,18 +300,21 @@ class CTFChallengesView(Container):
         self._selected_chall = chall
         self._render_detail(chall)
         self._update_action_buttons()
-        self._load_notes_for_chall(chall)
         inp = self.query_one("#ctf_flag_input", Input)
         inp.placeholder = f"Flag for {chall.get('name', '?')}..."
         inp._chall_id = chall['id']
 
-    def _load_notes_for_chall(self, chall):
         ctf = self.app._current_ctf
-        if not ctf:
+        if ctf:
+            tdir = _task_dir(self.app.WORKDIR, ctf, chall)
+            self._current_task_dir = tdir
+            ensure_task_dir(self.app, tdir, self._on_chall_dir_ready)
+
+    def _on_chall_dir_ready(self, path):
+        if path is None:
             return
-        tdir = _task_dir(self.app.WORKDIR, ctf, chall)
-        notes_path = os.path.join(tdir, "NOTES.md")
-        editor = self.query_one("#ctf_notes_editor", CTFNotesEditor)
+        notes_path = os.path.join(path, "NOTES.md")
+        editor = self.query_one("#ctf_notes_editor", NotesEditor)
         editor.set_filepath(notes_path)
         self.query_one("#ctf_notes_label", Label).update(f"Notes: {notes_path}  <ctrl+s> to save")
 
@@ -438,7 +412,7 @@ class CTFChallengesView(Container):
             ctf_id = ctf['id']
             chall_id = chall['id']
             filename = chall.get('filename', 'task.zip')
-            tdir = _task_dir(self.app.WORKDIR, ctf, chall)
+            tdir = getattr(self, '_current_task_dir', None) or _task_dir(self.app.WORKDIR, ctf, chall)
             os.makedirs(tdir, exist_ok=True)
             out_file = os.path.join(tdir, filename)
 

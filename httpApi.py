@@ -12,24 +12,6 @@ class TokenExpiredError(Exception):
     pass
 
 
-class ChallengeCategories:
-  """Class to manage challenge categories."""
-
-  def __init__(self) -> None:
-    self.id_to_name = {}
-    self.name_to_id = {}
-
-  async def load(self, api_session):
-    categories = (await api_session.async_get("/api/v4/challenge/categories/list")).get("info", [])
-    for cat in categories:
-      cat_id = cat.get("id")
-      cat_name = cat.get("name")
-      self.id_to_name[cat_id] = cat_name
-      self.name_to_id[cat_name] = cat_id
-
-  def __repr__(self):
-    return f"ChallengeCategories({list(self.name_to_id.keys())})"
-     
 _burp_addr = os.environ.get("USE_BURP")
 burp_proxy = httpx.Proxy(_burp_addr) if _burp_addr else None
 
@@ -40,8 +22,7 @@ class HTBApiSession:
           "Accept": "application/json, text/plain, */*",
           "User-Agent": "HTBClient/1.0.0"
   }
-  CRRENT_USER : dict 
-  CHALLENGE_CATEGORIES : dict 
+  CRRENT_USER : dict
   CACHE = None
   
   
@@ -52,7 +33,6 @@ class HTBApiSession:
     self.headers["Authorization"] = f"Bearer {self.APITOKEN}"
 
     self.CRRENT_USER = {}
-    self.CHALLENGE_CATEGORIES = None
 
     self.CACHE = {}
     self.USE_CACHE = 0
@@ -90,28 +70,15 @@ class HTBApiSession:
         return
       self.app.post_message(EventMsg("API::Initialized"))
       await self._async_load_current_user()
-      await self._async_load_categories()
       self._initialized = True
 
   async def _async_load_current_user(self):
     self.CRRENT_USER = await self.async_get("/api/v4/user/info")
     self.app.post_message(DebugMsg("API::current user", self.CRRENT_USER))
 
-  async def _async_load_categories(self):
-    self.CHALLENGE_CATEGORIES = ChallengeCategories()
-    await self.CHALLENGE_CATEGORIES.load(self)
-    self.app.post_message(DebugMsg("API::loaded categories ", self.CHALLENGE_CATEGORIES))
-  
   def load_current_user(self):
     self.CRRENT_USER = self.do_get("/api/v4/user/info")
 
-  def load_categories(self):
-    self.CHALLENGE_CATEGORIES = ChallengeCategories()
-    categories = self.do_get("/api/v4/challenge/categories/list").get("info", [])
-    for cat in categories:
-      self.CHALLENGE_CATEGORIES.id_to_name[cat["id"]] = cat["name"]
-      self.CHALLENGE_CATEGORIES.name_to_id[cat["name"]] = cat["id"]
-  
   def _make_url(self, endpoint):
     return f"{self.base_url}{endpoint}"
     

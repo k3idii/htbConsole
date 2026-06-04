@@ -29,6 +29,7 @@ class HackTheApp(App):
   WORKDIR : str = os.environ.get("HTB_WORKDIR", "./work")
   ZIP_PASSWORD : str = "hackthebox"
   UNPACK_CMD : str = "7z -o./unpacked/ -p{password} x {file}"
+  AUTO_CREATE_DIR : bool = True
 
   CSS_PATH = "HTB.tcss"
 
