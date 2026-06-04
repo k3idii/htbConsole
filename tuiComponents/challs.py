@@ -68,7 +68,7 @@ def make_dirname(chall, workdir):
 
 DEFAULT_TERMINAL = "/usr/bin/xfce4-terminal --hold -x "
 
-from .settings import DEFAULT_CHALL_CUSTOM_ACTIONS
+from appSettings import DEFAULT_CUSTOM_ACTIONS
 
 
 
@@ -111,12 +111,12 @@ class ChallDetails(Container):
  
   
   def on_mount(self):
-    workdir = getattr(self.app, 'WORKDIR', './work')
+    workdir = self.app.settings.workdir
     os.makedirs(workdir, exist_ok=True)
     self.query_one("#chall_dir_tree", DirectoryTree).path = os.path.abspath(workdir)
 
   def _get_action_template(self):
-    src = getattr(self.app, 'CUSTOM_ACTIONS', DEFAULT_CHALL_CUSTOM_ACTIONS)
+    src = getattr(self.app.settings, 'custom_actions', DEFAULT_CUSTOM_ACTIONS)
     if src != self._compiled_actions_src:
       self._compiled_actions_src = src
       self.action_templates = jinja2.Template(src.strip())
@@ -144,8 +144,8 @@ class ChallDetails(Container):
     try:
       result = await async_download_and_extract(
         self.chall_data, url,
-        password=getattr(self.app, 'ZIP_PASSWORD', None),
-        unpack_cmd=getattr(self.app, 'UNPACK_CMD', None),
+        password=self.app.settings.zip_password,
+        unpack_cmd=self.app.settings.unpack_cmd,
       )
       self.app.post_message(EventMsg(f"Download complete: {result}"))
       self.app.notify("Download complete", severity="information")
@@ -232,7 +232,7 @@ class ChallDetails(Container):
       data = await self.app.API.async_get(f"/api/v4/challenge/info/{self.CURRENT_ID}", cache_this=0)
       data = data['challenge']
       self.chall_data = data
-      workdir = getattr(self.app, 'WORKDIR', './work')
+      workdir = self.app.settings.workdir
       self.chall_data['local_dir_name'] = make_dirname(self.chall_data, workdir)
       self.chall_data['real_dir_name'] = os.path.abspath(self.chall_data['local_dir_name'])
 
@@ -250,7 +250,7 @@ class ChallDetails(Container):
         self._reload_notes_info()
         tree.path = path
       else:
-        tree.path = getattr(self.app, 'WORKDIR', './work')
+        tree.path = self.app.settings.workdir
       tree.reload()
       self._reload_cmd()
       self._writeup_loaded_for = None
@@ -363,7 +363,7 @@ class ChallDetails(Container):
         self.app.post_message(EventMsg(f"Official writeup: {url}"))
         self.app.notify(f"Official PDF: {url}", timeout=8)
         from .downloader import async_download
-        workdir = getattr(self.app, 'WORKDIR', './work')
+        workdir = self.app.settings.workdir
         out_dir = os.path.join(workdir, 'writeups')
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, f"chall_{self.CURRENT_ID}_official.pdf")
@@ -396,7 +396,7 @@ class ChallDetails(Container):
       self.app.post_message(DebugMsg(f"LinkClick:{link}",ev,widget,link))
       proto, content= link.split('://',1)
       if proto == 'cmd':
-        terminal = getattr(self.app, 'TERMINAL', DEFAULT_TERMINAL)
+        terminal = self.app.settings.terminal
         cmd = f"""{terminal} {content}"""
         try:
           out = execute_shell(cmd)

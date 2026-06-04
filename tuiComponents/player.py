@@ -230,7 +230,7 @@ class PlayerStats(Static):
         except Exception:
             pass
         table.add_row("VPN", vpn_text)
-        table.add_row("Workdir", getattr(self.app, 'WORKDIR', '?'))
+        table.add_row("Workdir", self.app.settings.workdir)
             
     def get_user_id(self) -> str:
       

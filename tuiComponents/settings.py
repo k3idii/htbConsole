@@ -6,20 +6,7 @@ from textual.app import ComposeResult
 from rich.table import Table
 
 from .messages import DebugMsg, EventMsg, ErrorMsg
-
-
-DEFAULT_CHALL_CUSTOM_ACTIONS = """\
-{% if play_info.status == 'ready' %}
-{% for port in play_info.ports %}
-{% set url = 'cmd://netcat '~play_info.ip~' '~port%}
-- [netcat {{play_info.ip}}:{{port}}]({{url|urlencode}})
-- [http {{play_info.ip}}:{{port}}](http://{{play_info.ip}}:{{port}}/)
-{% endfor %}
-{% endif %}
-{% set vscode = 'cmd://code '~real_dir_name %}
-- [Open vsCode here]({{ vscode|urlencode }})
-- [nmap](cmd://nmap%20{{play_info.ip}}>foo.txt)
-"""
+from appSettings import DEFAULT_CUSTOM_ACTIONS
 
 
 class ContainerSettings(VerticalScroll):
@@ -84,22 +71,17 @@ class ContainerSettings(VerticalScroll):
     async def _load_settings(self):
         try:
             await self.app.API.ensure_init()
-            api = self.app.API
+            s = self.app.settings
 
-            self.query_one("#settings_cache_toggle", Switch).value = bool(api.USE_CACHE)
-
-            import os
-            burp_addr = os.environ.get("USE_BURP", "")
-            self.query_one("#settings_burp_input", Input).value = burp_addr
-            self.query_one("#settings_burp_toggle", Switch).value = bool(burp_addr)
-
-            self.query_one("#settings_workdir_input", Input).value = self.app.WORKDIR
-            self.query_one("#settings_autocreate_toggle", Switch).value = getattr(self.app, 'AUTO_CREATE_DIR', True)
-            self.query_one("#settings_zip_password_input", Input).value = self.app.ZIP_PASSWORD
-            self.query_one("#settings_unpack_cmd_input", Input).value = self.app.UNPACK_CMD
-            self.query_one("#settings_terminal_input", Input).value = self.app.TERMINAL
-
-            self.query_one("#settings_actions_editor", TextArea).text = getattr(self.app, 'CUSTOM_ACTIONS', '')
+            self.query_one("#settings_cache_toggle", Switch).value = s.use_cache
+            self.query_one("#settings_burp_input", Input).value = s.burp_proxy
+            self.query_one("#settings_burp_toggle", Switch).value = bool(s.burp_proxy)
+            self.query_one("#settings_workdir_input", Input).value = s.workdir
+            self.query_one("#settings_autocreate_toggle", Switch).value = s.auto_create_dir
+            self.query_one("#settings_zip_password_input", Input).value = s.zip_password
+            self.query_one("#settings_unpack_cmd_input", Input).value = s.unpack_cmd
+            self.query_one("#settings_terminal_input", Input).value = s.terminal
+            self.query_one("#settings_actions_editor", TextArea).text = s.custom_actions or ''
 
             self._refresh_api_info()
             await self._refresh_vpn_info()
@@ -120,7 +102,7 @@ class ContainerSettings(VerticalScroll):
         table.add_row("Token", masked)
         table.add_row("User", f"{user.get('name', '?')} (ID: {user.get('id', '?')})")
         table.add_row("Cache entries", str(len(api.CACHE)))
-        table.add_row("Cache enabled", "Yes" if api.USE_CACHE else "No")
+        table.add_row("Cache enabled", "Yes" if self.app.settings.use_cache else "No")
 
         cats = getattr(self.app, '_challenge_categories', None)
         if cats:
@@ -148,11 +130,16 @@ class ContainerSettings(VerticalScroll):
         except Exception:
             self.query_one("#settings_vpn_info").update("Could not load VPN info")
 
+    def _persist(self):
+        self.app.settings.save()
+
     @on(Switch.Changed, "#settings_cache_toggle")
     def toggle_cache(self, event: Switch.Changed):
+        self.app.settings.use_cache = event.value
         self.app.API.USE_CACHE = 1 if event.value else 0
         self.app.post_message(EventMsg(f"Cache {'enabled' if event.value else 'disabled'}"))
         self._refresh_api_info()
+        self._persist()
 
     @on(Switch.Changed, "#settings_burp_toggle")
     async def toggle_burp(self, event: Switch.Changed):
@@ -161,9 +148,11 @@ class ContainerSettings(VerticalScroll):
         import httpApi
         addr = self.query_one("#settings_burp_input", Input).value.strip()
         if event.value and addr:
+            self.app.settings.burp_proxy = addr
             os.environ["USE_BURP"] = addr
             httpApi.burp_proxy = httpx.Proxy(addr)
         else:
+            self.app.settings.burp_proxy = ""
             os.environ.pop("USE_BURP", None)
             httpApi.burp_proxy = None
             if event.value and not addr:
@@ -172,6 +161,7 @@ class ContainerSettings(VerticalScroll):
                 return
         await self.app.API.close()
         self.app.post_message(EventMsg(f"Burp proxy {'enabled: ' + addr if event.value else 'disabled'}"))
+        self._persist()
 
     @on(Button.Pressed, "#settings_clear_cache_button")
     def clear_cache(self, event):
@@ -191,37 +181,42 @@ class ContainerSettings(VerticalScroll):
 
     @on(Switch.Changed, "#settings_autocreate_toggle")
     def toggle_autocreate(self, event: Switch.Changed):
-        self.app.AUTO_CREATE_DIR = event.value
+        self.app.settings.auto_create_dir = event.value
         self.app.post_message(EventMsg(f"Auto-create directories {'enabled' if event.value else 'disabled'}"))
+        self._persist()
 
     @on(Input.Submitted, "#settings_zip_password_input")
     def update_zip_password(self, event: Input.Submitted):
-        self.app.ZIP_PASSWORD = event.value
+        self.app.settings.zip_password = event.value
         self.app.post_message(EventMsg("Zip password updated"))
+        self._persist()
 
     @on(Input.Submitted, "#settings_unpack_cmd_input")
     def update_unpack_cmd(self, event: Input.Submitted):
         val = event.value.strip()
         if val:
-            self.app.UNPACK_CMD = val
+            self.app.settings.unpack_cmd = val
             self.app.post_message(EventMsg(f"Unpack command set to: {val}"))
+            self._persist()
 
     @on(Input.Submitted, "#settings_workdir_input")
     def update_workdir(self, event: Input.Submitted):
         import os
         val = event.value.strip()
         if val:
-            self.app.WORKDIR = val
+            self.app.settings.workdir = val
             os.makedirs(val, exist_ok=True)
             self.app.API._CACHE_FILE = os.path.join(val, "req_cache.json")
             self.app.post_message(EventMsg(f"Workdir set to: {os.path.abspath(val)}"))
+            self._persist()
 
     @on(Input.Submitted, "#settings_terminal_input")
     def update_terminal(self, event: Input.Submitted):
         val = event.value.strip()
         if val:
-            self.app.TERMINAL = val
+            self.app.settings.terminal = val
             self.app.post_message(EventMsg(f"Terminal set to: {val}"))
+            self._persist()
 
     @on(Button.Pressed, "#settings_actions_apply_button")
     def apply_actions(self, event):
@@ -232,16 +227,18 @@ class ContainerSettings(VerticalScroll):
         except jinja2.TemplateSyntaxError as e:
             self.app.notify(f"Template error: {e}", severity="error")
             return
-        self.app.CUSTOM_ACTIONS = src
+        self.app.settings.custom_actions = src
         self.app.post_message(EventMsg("Custom actions updated"))
         self.app.notify("Custom actions applied", timeout=3)
+        self._persist()
 
     @on(Button.Pressed, "#settings_actions_reset_button")
     def reset_actions(self, event):
-        self.app.CUSTOM_ACTIONS = DEFAULT_CHALL_CUSTOM_ACTIONS
-        self.query_one("#settings_actions_editor", TextArea).text = DEFAULT_CHALL_CUSTOM_ACTIONS
+        self.app.settings.custom_actions = DEFAULT_CUSTOM_ACTIONS
+        self.query_one("#settings_actions_editor", TextArea).text = DEFAULT_CUSTOM_ACTIONS
         self.app.post_message(EventMsg("Custom actions reset to default"))
         self.app.notify("Custom actions reset", timeout=3)
+        self._persist()
 
     @on(Button.Pressed, "#settings_vpn_refresh_button")
     async def refresh_vpn(self, event):

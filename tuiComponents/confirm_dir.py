@@ -44,7 +44,7 @@ def ensure_task_dir(app, path, callback):
         callback(path)
         return
 
-    if getattr(app, 'AUTO_CREATE_DIR', True):
+    if getattr(getattr(app, 'settings', None), 'auto_create_dir', True):
         os.makedirs(path, exist_ok=True)
         callback(path)
         return

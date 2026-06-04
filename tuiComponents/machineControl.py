@@ -97,7 +97,7 @@ class MachineDetails(Static):
         self.handle_display_controls()
         self.query_one("#machine_details").update(self.make_machine_details())
         name = self.selected_machine_data.get("name", "unknown")
-        workdir = getattr(self.app, 'WORKDIR', './work')
+        workdir = self.app.settings.workdir
         self._task_dir = _machine_dir(name, workdir)
         ensure_task_dir(self.app, self._task_dir, self._on_dir_ready)
 

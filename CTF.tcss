@@ -14,16 +14,7 @@ Header {
 }
 
 #container-main {
-    height: 80%;
-}
-
-#container-logs {
-    height: 20%;
-    overflow-y: scroll;
-    border: panel $border;
-    border-title-color: $border-title-color;
-    border-title-style: bold;
-    border-title-align: right;
+    height: 1fr;
 }
 
 

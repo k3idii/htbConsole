@@ -1,3 +1,4 @@
 httpx
 textual
 jinja2
+pyyaml

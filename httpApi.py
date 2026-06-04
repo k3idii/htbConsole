@@ -36,7 +36,7 @@ class HTBApiSession:
 
     self.CACHE = {}
     self.USE_CACHE = 0
-    workdir = getattr(app, 'WORKDIR', '.') if app else '.'
+    workdir = getattr(getattr(app, 'settings', None), 'workdir', '.') if app else '.'
     self._CACHE_FILE = os.path.join(workdir, "req_cache.json")
     os.makedirs(workdir, exist_ok=True)
     try:

@@ -10,19 +10,13 @@ from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg, SelfFormattingM
 from tuiComponents.token_screen import TokenInputScreen
 from tuiComponents.ctf_list import CTFListView
 from tuiComponents.ctf_challs import CTFChallengesView
+from tuiComponents.log_screen import LogScreen
 from httpApi import HTBCTFSession
-
-
-class OutputLog(RichLog):
-    border_title = "Log console"
+from appSettings import CTFSettings
 
 
 class CTFApp(App):
     CTF_API: HTBCTFSession
-    WORKDIR: str = os.environ.get("HTB_WORKDIR", "./work")
-    ZIP_PASSWORD: str = "hackthebox"
-    UNPACK_CMD: str = "7z -o./unpacked/ -p{password} x {file}"
-    AUTO_CREATE_DIR: bool = True
 
     CSS_PATH = "CTF.tcss"
 
@@ -32,7 +26,7 @@ class CTFApp(App):
         Binding("escape", "back_to_list", "Back", show=True),
     ]
 
-    logs_size = 0
+    SCREENS = {"log": LogScreen}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,17 +34,16 @@ class CTFApp(App):
         self._current_ctf = None
         self._ctf_challenges = {}
         self._ctf_cats = {}
+        self._log_buffer = []
+        self._log_visible = False
 
-
-    # TODO : deduplicate this code with tuiHTB.py by creatgin master windows class shared
     def action_logs(self):
-        self.logs_size = 0 if self.logs_size else 1
-        if self.logs_size:
-            self.query_one("#container-main").styles.height = "80%"
-            self.query_one("#container-logs").styles.height = "20%"
+        if isinstance(self.screen, LogScreen):
+            self._log_visible = False
+            self.pop_screen()
         else:
-            self.query_one("#container-main").styles.height = "20%"
-            self.query_one("#container-logs").styles.height = "80%"
+            self.push_screen("log")
+            self._log_visible = True
 
     def action_back_to_list(self):
         self.query_one("#ctf_list_view").styles.display = "block"
@@ -62,18 +55,22 @@ class CTFApp(App):
         with Container(id="container-main"):
             yield CTFListView(id="ctf_list_view")
             yield CTFChallengesView(id="ctf_challenges_view")
-        with Container(id="container-logs"):
-            yield OutputLog(id="log")
         yield Footer()
 
     @on(DebugMsg)
     @on(EventMsg)
     @on(ErrorMsg)
     def log_messages(self, message: SelfFormattingMsg) -> None:
-        self.query_one("#log").write(message)
+        self._log_buffer.append(message)
+        if self._log_visible:
+            try:
+                self.screen.query_one("#log", RichLog).write(message)
+            except Exception:
+                pass
 
     def on_ready(self):
-        os.makedirs(self.WORKDIR, exist_ok=True)
+        self.settings = CTFSettings.load()
+        os.makedirs(self.settings.workdir, exist_ok=True)
         self.query_one("#ctf_challenges_view").styles.display = "none"
         self.post_message(EventMsg("CTF App ready"))
         self.run_worker(self._validate_token())
@@ -109,12 +106,14 @@ class CTFApp(App):
         self.post_message(EventMsg(f"Entered CTF: {result['name']}"))
 
     async def on_unmount(self):
+        self.settings.save()
         await self.CTF_API.close()
 
 
 def main():
     token = os.getenv("CTF_TOKEN", "")
     app = CTFApp()
+    app.settings = CTFSettings.load()
     app.CTF_API = HTBCTFSession(token, app)
     app.run()
 

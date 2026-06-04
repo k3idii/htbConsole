@@ -178,7 +178,7 @@ class CTFChallengesView(Container):
             gt.add_row("MCP", detail.get('mcp_access_mode', '-'))
             gt.add_row("AI Policy", str(detail.get('ai_usage_policy') or '-'))
             gt.add_row("", "")
-            gt.add_row("[b]Workdir", _ctf_base_dir(self.app.WORKDIR, detail))
+            gt.add_row("[b]Workdir", _ctf_base_dir(self.app.settings.workdir, detail))
             self.query_one("#ctf_general_info").update(gt)
 
             cats = {}
@@ -306,7 +306,7 @@ class CTFChallengesView(Container):
 
         ctf = self.app._current_ctf
         if ctf:
-            tdir = _task_dir(self.app.WORKDIR, ctf, chall)
+            tdir = _task_dir(self.app.settings.workdir, ctf, chall)
             self._current_task_dir = tdir
             ensure_task_dir(self.app, tdir, self._on_chall_dir_ready)
 
@@ -345,7 +345,7 @@ class CTFChallengesView(Container):
 
         ctf = self.app._current_ctf
         if ctf:
-            tdir = _task_dir(self.app.WORKDIR, ctf, chall)
+            tdir = _task_dir(self.app.settings.workdir, ctf, chall)
             text += f"**Local dir:** `{tdir}`\n\n"
 
         flags_info = chall.get('flagsInfo', [])
@@ -376,7 +376,7 @@ class CTFChallengesView(Container):
             self.app.notify("No CTF loaded", severity="warning")
             return
         challenges = ctf.get('challenges', [])
-        base = _ctf_base_dir(self.app.WORKDIR, ctf)
+        base = _ctf_base_dir(self.app.settings.workdir, ctf)
         self.app.push_screen(
             ConfirmDirsScreen(base, len(challenges)),
             self._on_confirm_dirs,
@@ -389,7 +389,7 @@ class CTFChallengesView(Container):
         challenges = ctf.get('challenges', [])
         created = 0
         for chall in challenges:
-            tdir = _task_dir(self.app.WORKDIR, ctf, chall)
+            tdir = _task_dir(self.app.settings.workdir, ctf, chall)
             if not os.path.exists(tdir):
                 os.makedirs(tdir, exist_ok=True)
                 created += 1
@@ -412,7 +412,7 @@ class CTFChallengesView(Container):
             ctf_id = ctf['id']
             chall_id = chall['id']
             filename = chall.get('filename', 'task.zip')
-            tdir = getattr(self, '_current_task_dir', None) or _task_dir(self.app.WORKDIR, ctf, chall)
+            tdir = getattr(self, '_current_task_dir', None) or _task_dir(self.app.settings.workdir, ctf, chall)
             os.makedirs(tdir, exist_ok=True)
             out_file = os.path.join(tdir, filename)
 
@@ -425,8 +425,8 @@ class CTFChallengesView(Container):
 
             ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
             if ext in ('zip', '7z', 'tar', 'gz', 'rar'):
-                pw = getattr(self.app, 'ZIP_PASSWORD', None)
-                cmd = getattr(self.app, 'UNPACK_CMD', None)
+                pw = self.app.settings.zip_password
+                cmd = self.app.settings.unpack_cmd
                 execute_unpack(tdir, filename, password=pw, unpack_cmd=cmd)
                 result += " | Extracted"
 

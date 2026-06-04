@@ -186,7 +186,7 @@ class SherlockDetails(Container):
             except Exception:
                 pass
 
-            workdir = getattr(self.app, 'WORKDIR', './work')
+            workdir = self.app.settings.workdir
             self._task_dir = _sherlock_dir(self.sherlock_data.get("name", "unknown"), workdir)
 
             self._render_info(description)
@@ -338,7 +338,7 @@ class SherlockDetails(Container):
         try:
             sdir = getattr(self, '_task_dir', None)
             if not sdir:
-                workdir = getattr(self.app, 'WORKDIR', './work')
+                workdir = self.app.settings.workdir
                 sdir = _sherlock_dir(self.sherlock_data.get("name", "unknown"), workdir)
             os.makedirs(sdir, exist_ok=True)
             chall_data = {
@@ -347,8 +347,8 @@ class SherlockDetails(Container):
             }
             result = await async_download_and_extract(
                 chall_data, url,
-                password=getattr(self.app, 'ZIP_PASSWORD', None),
-                unpack_cmd=getattr(self.app, 'UNPACK_CMD', None),
+                password=self.app.settings.zip_password,
+                unpack_cmd=self.app.settings.unpack_cmd,
             )
             self.app.post_message(EventMsg(f"Sherlock::Download complete: {result}"))
             self.app.notify("Download complete", severity="information")

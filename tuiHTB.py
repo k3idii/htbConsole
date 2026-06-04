@@ -3,8 +3,8 @@ import os
 from textual import on
 from textual.binding import Binding
 from textual.app import App, ComposeResult
-from textual.widgets import Label, TabbedContent, TabPane, ContentSwitcher, RichLog
-from textual.containers import Container, VerticalScroll, HorizontalScroll
+from textual.widgets import Label, TabbedContent, TabPane, RichLog
+from textual.containers import Container
 from textual.widgets import Footer, Header
 
 
@@ -14,26 +14,17 @@ from tuiComponents.sherlocks import ContainerSherlocks
 from tuiComponents.player import ContainerPlayerInfo
 from tuiComponents.settings import ContainerSettings
 from tuiComponents.token_screen import TokenInputScreen
+from tuiComponents.log_screen import LogScreen
 
 from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg, SelfFormattingMsg
 from httpApi import HTBApiSession
-
-
-class OutputLog(RichLog):
-  border_title = "Log console"
+from appSettings import HTBSettings
 
 
 class HackTheApp(App):
   API : HTBApiSession
-  TERMINAL : str = "/usr/bin/xfce4-terminal --hold -x "
-  WORKDIR : str = os.environ.get("HTB_WORKDIR", "./work")
-  ZIP_PASSWORD : str = "hackthebox"
-  UNPACK_CMD : str = "7z -o./unpacked/ -p{password} x {file}"
-  AUTO_CREATE_DIR : bool = True
 
   CSS_PATH = "HTB.tcss"
-
-  logs_size = 0
 
   BINDINGS = [
     Binding("q", "quit", "Quit the app", show=True),
@@ -42,15 +33,20 @@ class HackTheApp(App):
     Binding("]", "next_tab", "Next tab", show=True),
   ]
 
+  SCREENS = {"log": LogScreen}
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._log_buffer = []
+    self._log_visible = False
+
   def action_logs(self):
-    self.post_message(EventMsg(f"ToggleLogs {self.logs_size}"))
-    self.logs_size = 0 if self.logs_size else 1
-    if self.logs_size:
-      self.query_one("#container-main").styles.height="80%"
-      self.query_one("#container-logs").styles.height="20%"
+    if isinstance(self.screen, LogScreen):
+      self._log_visible = False
+      self.pop_screen()
     else:
-      self.query_one("#container-main").styles.height="20%"
-      self.query_one("#container-logs").styles.height="80%"
+      self.push_screen("log")
+      self._log_visible = True
 
   def compose(self) -> ComposeResult:
     yield Header(show_clock=True)
@@ -68,15 +64,18 @@ class HackTheApp(App):
         for title, id, widget in panels:
           with TabPane(title, id=f"tab__{id}"):
             yield widget(id=f'cont__{id}')
-    with Container(id="container-logs"):
-      yield OutputLog(id="log")
     yield Footer()
 
   @on(DebugMsg)
   @on(EventMsg)
   @on(ErrorMsg)
   def log_debug_messages(self, message: SelfFormattingMsg) -> None:
-      self.query_one("#log").write(message)
+    self._log_buffer.append(message)
+    if self._log_visible:
+      try:
+        self.screen.query_one("#log", RichLog).write(message)
+      except Exception:
+        pass
 
   _TAB_IDS = ["tab__account", "tab__challs", "tab__sherlocks", "tab__machines", "tab__settings"]
 
@@ -97,8 +96,9 @@ class HackTheApp(App):
     tabs.active = self._TAB_IDS[(idx + 1) % len(self._TAB_IDS)]
 
   def on_ready(self) -> None:
-    os.makedirs(self.WORKDIR, exist_ok=True)
-    self.post_message(EventMsg(f"App is ready (workdir: {os.path.abspath(self.WORKDIR)})"))
+    self.settings = HTBSettings.load()
+    os.makedirs(self.settings.workdir, exist_ok=True)
+    self.post_message(EventMsg(f"App is ready (workdir: {os.path.abspath(self.settings.workdir)})"))
     self.run_worker(self._validate_token())
 
   async def _validate_token(self):
@@ -133,6 +133,7 @@ class HackTheApp(App):
     self.run_worker(self._validate_token())
 
   async def on_unmount(self) -> None:
+    self.settings.save()
     await self.API.close()
 
   def get_api(self) -> HTBApiSession:
@@ -142,6 +143,7 @@ class HackTheApp(App):
 def main():
   token = os.getenv("HTB_TOKEN", "")
   app = HackTheApp()
+  app.settings = HTBSettings.load()
   app.API = HTBApiSession(token, app)
   app.run()
 
