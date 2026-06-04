@@ -66,12 +66,6 @@ def make_dirname(chall, workdir):
   return os.path.join(workdir, 'challenges', cat, f"{dif}__{name}")
 
 
-DEFAULT_TERMINAL = "/usr/bin/xfce4-terminal --hold -x "
-
-from appSettings import DEFAULT_CUSTOM_ACTIONS
-
-
-
 class FlagAcceptedScreen(ModalScreen):
 
   CSS = """
@@ -116,7 +110,7 @@ class ChallDetails(Container):
     self.query_one("#chall_dir_tree", DirectoryTree).path = os.path.abspath(workdir)
 
   def _get_action_template(self):
-    src = getattr(self.app.settings, 'custom_actions', DEFAULT_CUSTOM_ACTIONS)
+    src = getattr(self.app.settings, 'custom_actions', '')
     if src != self._compiled_actions_src:
       self._compiled_actions_src = src
       self.action_templates = jinja2.Template(src.strip())
