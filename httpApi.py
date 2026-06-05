@@ -161,7 +161,7 @@ class HTBApiSession:
     if response.status_code not in (200, 201):
       body = ""
       try:
-        body = response.json().get("message", response.text[:200])
+        body = response.json().get("message", response.text[:400])
       except Exception:
         body = response.text[:200]
       raise Exception(f"Request {method} to {URL} fail with {response.status_code}: {body}")

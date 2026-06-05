@@ -314,13 +314,23 @@ Header {
         }
     }
 
-    #machine_control {
+    #machine_right_pane {
         width: 50%;
         height: 1fr;
         margin: 1 0 1 1;
+
+        #machine_active_status {
+            height: auto;
+            padding: 0 1;
+            background: $background-lighten-1;
+            color: $color;
+        }
+    }
+
+    #machine_control {
+        width: 100%;
+        height: 1fr;
         background: $background-lighten-1;
-        # border-top: outer $border;
-        # border-bottom: tall #000 30%;
         border: panel $border;
         border-title-color: $border-title-color;
         border-title-style: bold;
@@ -473,6 +483,7 @@ Header {
             background: $secondary;
             border-top: tall $secondary-lighten-1;
             border-bottom: tall $secondary 30%;
+            color: black;
 
             &:hover {
                 background: $secondary 90%;

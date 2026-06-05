@@ -3,7 +3,7 @@ import os
 from textual import on
 from textual.binding import Binding
 from textual.app import App, ComposeResult
-from textual.widgets import Label, TabbedContent, TabPane, RichLog
+from textual.widgets import TabbedContent, TabPane, RichLog
 from textual.containers import Container
 from textual.widgets import Footer, Header
 
@@ -39,6 +39,8 @@ class HackTheApp(App):
     super().__init__(*args, **kwargs)
     self._log_buffer = []
     self._log_visible = False
+    self.active_machine_id = None
+    self.active_machine_info = None
 
   def action_logs(self):
     if isinstance(self.screen, LogScreen):
@@ -76,6 +78,11 @@ class HackTheApp(App):
         self.screen.query_one("#log", RichLog).write(message)
       except Exception:
         pass
+
+  @on(TabbedContent.TabActivated, "#main_tabs")
+  def on_main_tab_activated(self, event: TabbedContent.TabActivated):
+    if event.pane.id == "tab__machines":
+      self.query_one(ContainerMachines).activate()
 
   _TAB_IDS = ["tab__account", "tab__challs", "tab__sherlocks", "tab__machines", "tab__settings"]
 
