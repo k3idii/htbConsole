@@ -9,14 +9,13 @@ YAML_KEY = None
 DEFAULT_CUSTOM_ACTIONS = """\
 {% if play_info.status == 'ready' %}
 {% for port in play_info.ports %}
-{% set url = 'cmd://netcat '~play_info.ip~' '~port%}
-- [netcat {{play_info.ip}}:{{port}}]({{url|urlencode}})
+- [netcat {{play_info.ip}}:{{port}}]({{ cmd('netcat', play_info.ip, port) }})
 - [http {{play_info.ip}}:{{port}}](http://{{play_info.ip}}:{{port}}/)
 {% endfor %}
 {% endif %}
-{% set vscode = 'cmd://code '~real_dir_name %}
-- [Open vsCode here]({{ vscode|urlencode }})
-- [nmap](cmd://nmap%20{{play_info.ip}}>foo.txt)
+- [Open vsCode here]({{ cmd('code', real_dir_name) }})
+- [nmap scan]({{ cmd('nmap', play_info.ip) }})
+- [Open terminal]({{ cmd('xfce4-terminal', '-e', 'bash','--working-directory={real_dir_name}') }})
 """
 
 ENV_OVERRIDES = {

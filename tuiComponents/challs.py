@@ -19,6 +19,43 @@ from .notes_editor import NotesEditor
 from .confirm_dir import ensure_task_dir
 
 import jinja2
+from urllib.parse import quote as _urlquote
+
+
+def _cmd(*args):
+    """Jinja2 helper: cmd('netcat', '10.10.10.1', '80') -> cmd://netcat%2010.10.10.1%2080"""
+    parts = [str(a) for a in args if a is not None]
+    raw = ' '.join(parts)
+    return f"cmd://{_urlquote(raw, safe='')}"
+
+
+_jinja_env = jinja2.Environment(undefined=jinja2.Undefined)
+_jinja_env.globals["cmd"] = _cmd
+
+_template_cache = {}
+
+MOCK_TASK_CONTEXT = {
+    "name": "ExampleChallenge",
+    "difficulty": "Medium",
+    "solves": 42,
+    "state": "live",
+    "description": "Example challenge description",
+    "category_name": "Web",
+    "local_dir_name": "./work/ExampleChallenge",
+    "real_dir_name": "/home/user/work/ExampleChallenge",
+    "play_info": {
+        "ip": "10.10.10.1",
+        "ports": [80, 443],
+        "status": "ready",
+    },
+}
+
+
+def render_custom_actions(template_src, task_context):
+    if template_src not in _template_cache:
+        _template_cache[template_src] = _jinja_env.from_string(template_src.strip())
+    tmpl = _template_cache[template_src]
+    return tmpl.render(task_context)
 
 
 class ChallengeCategories:
@@ -100,21 +137,11 @@ class ChallDetails(Container):
     super().__init__(*args, **kwargs)
     self.chall_data = None
     self._writeup_loaded_for = None
-    self._compiled_actions_src = None
-    self.action_templates = None
- 
-  
+
   def on_mount(self):
     workdir = self.app.settings.workdir
     os.makedirs(workdir, exist_ok=True)
     self.query_one("#chall_dir_tree", DirectoryTree).path = os.path.abspath(workdir)
-
-  def _get_action_template(self):
-    src = getattr(self.app.settings, 'custom_actions', '')
-    if src != self._compiled_actions_src:
-      self._compiled_actions_src = src
-      self.action_templates = jinja2.Template(src.strip())
-    return self.action_templates
 
   def has_active_chall(self) -> bool:
     """Check if there is an active challenge."""
@@ -301,7 +328,9 @@ class ChallDetails(Container):
 
     text += "\n**Custom actions**\n\n"
     try:
-      text += self._get_action_template().render(self.chall_data)
+      src = getattr(self.app.settings, 'custom_actions', '')
+      text += render_custom_actions(src, self.chall_data)
+      self.app.post_message(EventMsg(f"Custom actions rendered : {src} -> {text}")) 
     except Exception as ex:
       text += f"*Error rendering custom actions: {ex}*"
   

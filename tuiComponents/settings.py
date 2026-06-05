@@ -46,8 +46,8 @@ class ContainerSettings(VerticalScroll):
             with Container(id="settings_actions"):
                 yield Label("[b]Custom Actions (Challenges)", id="settings_actions_title")
                 yield Label(
-                    "Jinja2 template rendered in challenge info. "
-                    "Use cmd:// links to run commands in terminal.",
+                    "Jinja2 template. Use cmd(arg, ...) to build terminal links: "
+                    "{{ cmd('nmap', play_info.ip) }}",
                     id="settings_actions_help",
                 )
                 yield Label(
@@ -220,11 +220,11 @@ class ContainerSettings(VerticalScroll):
 
     @on(Button.Pressed, "#settings_actions_apply_button")
     def apply_actions(self, event):
-        import jinja2
+        from .challs import render_custom_actions, MOCK_TASK_CONTEXT
         src = self.query_one("#settings_actions_editor", TextArea).text
         try:
-            jinja2.Template(src.strip())
-        except jinja2.TemplateSyntaxError as e:
+            render_custom_actions(src, MOCK_TASK_CONTEXT)
+        except Exception as e:
             self.app.notify(f"Template error: {e}", severity="error")
             return
         self.app.settings.custom_actions = src
