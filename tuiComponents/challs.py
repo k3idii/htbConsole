@@ -1,5 +1,7 @@
 
 
+from textual import system_commands
+from textual import system_commands
 import re 
 import os
 
@@ -21,16 +23,50 @@ from .confirm_dir import ensure_task_dir
 import jinja2
 from urllib.parse import quote as _urlquote
 
+def _gen_url(protocol="cmd"):
+  def _url_builder(*args):
+      """Jinja2 helper: cmd('netcat', '10.10.10.1', '80') -> cmd://netcat%2010.10.10.1%2080"""
+      parts = [str(a) for a in args if a is not None]
+      raw = ' '.join(parts)
+      return f"{protocol}://{_urlquote(raw, safe='')}"
+  return _url_builder  
+ 
+class CustomUriDispatcher:
 
-def _cmd(*args):
-    """Jinja2 helper: cmd('netcat', '10.10.10.1', '80') -> cmd://netcat%2010.10.10.1%2080"""
-    parts = [str(a) for a in args if a is not None]
-    raw = ' '.join(parts)
-    return f"cmd://{_urlquote(raw, safe='')}"
+  def __init__(self, app):
+    self.app = app
+
+  def dispatch(self, uri):
+    try:
+      proto, content = uri.split("://", 1)
+    except Exception: 
+      self.app.post_message(EventMsg(f"dispatch: {uri}"))
+      return
+    self.app.post_message(EventMsg(f"dispatch: {uri}"))
+    method = getattr(self,f"_run_{proto}", None)
+    
+    if method and callable(method):
+      try:
+        result = method(content)
+        if result is not None:
+          self.app.post_message(EventMsg(result))
+      except Exception as ex:
+        self.app.post_message(ErrorMsg(ex))
+
+  def _run_cmd(self, args):
+    self.app.post_message(EventMsg(f"exec: {args}"))
+    out = execute_shell(args)
+
+  def _run_terminal(self, args):
+    self.app.post_message(EventMsg(f"terminal: {args}"))
+    cmd = f"""{self.app.settings.terminal} {args}"""
+    out = execute_shell(cmd)
 
 
 _jinja_env = jinja2.Environment(undefined=jinja2.Undefined)
-_jinja_env.globals["cmd"] = _cmd
+_jinja_env.globals["cmd"] = _gen_url("cmd")
+_jinja_env.globals["terminal"] = _gen_url("terminal")
+ 
 
 _template_cache = {}
 
@@ -417,15 +453,8 @@ class ChallDetails(Container):
       widget = ev.control
       link = ev.href
       self.app.post_message(DebugMsg(f"LinkClick:{link}",ev,widget,link))
-      proto, content= link.split('://',1)
-      if proto == 'cmd':
-        terminal = self.app.settings.terminal
-        cmd = f"""{terminal} {content}"""
-        try:
-          out = execute_shell(cmd)
-          self.app.post_message(DebugMsg("Execute", cmd, out))
-        except Exception as ex:
-          self.app.post_message(ErrorMsg(ex))
+      dispatcher = CustomUriDispatcher(self.app)
+      return dispatcher.dispatch(link)
     except Exception as ex:
       self.app.post_message(ErrorMsg(ex))
   

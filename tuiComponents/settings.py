@@ -46,8 +46,11 @@ class ContainerSettings(VerticalScroll):
             with Container(id="settings_actions"):
                 yield Label("[b]Custom Actions (Challenges)", id="settings_actions_title")
                 yield Label(
-                    "Jinja2 template. Use cmd(arg, ...) to build terminal links: "
-                    "{{ cmd('nmap', play_info.ip) }}",
+                    "Jinja2 template. Use cmd(arg, ...) to build exec() links (no terminal will popup!)"
+                    "EXAMPLE: {{ cmd('echo','1') }}"\n\n
+                    "Use terminal(arg, ...) to open command in a new terminal:\n "
+                    "EXAMPLE: {{ terminal('nmap', play_info.ip) }}\n"
+                    ,
                     id="settings_actions_help",
                 )
                 yield Label(

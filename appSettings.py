@@ -13,8 +13,8 @@ DEFAULT_CUSTOM_ACTIONS = """\
 - [http {{play_info.ip}}:{{port}}](http://{{play_info.ip}}:{{port}}/)
 {% endfor %}
 {% endif %}
-- [Open vsCode here]({{ cmd('code', real_dir_name) }})
-- [nmap scan]({{ cmd('nmap', play_info.ip) }})
+- [Open vsCode here]({{ terminal('code', real_dir_name) }})
+- [nmap scan]({{ terminal('nmap', play_info.ip) }})
 - [Open terminal]({{ cmd('xfce4-terminal', '-e', 'bash','--working-directory={real_dir_name}') }})
 """
 
