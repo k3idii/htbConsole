@@ -47,10 +47,12 @@ class CustomUriDispatcher:
     
     if method and callable(method):
       try:
+        self.app.notify(f"Executing: {proto} {content}", timeout=1, severity="information")
         result = method(content)
         if result is not None:
           self.app.post_message(EventMsg(result))
       except Exception as ex:
+        self.app.notify(f"Error@executing: {ex}", timeout=3, severity="error")
         self.app.post_message(ErrorMsg(ex))
 
   def _run_cmd(self, args):

@@ -24,6 +24,7 @@ from appSettings import HTBSettings
 class HackTheApp(App):
   API : HTBApiSession
 
+  ALLOW_SELECT = True  
   CSS_PATH = "HTB.tcss"
 
   BINDINGS = [

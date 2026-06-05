@@ -163,7 +163,7 @@ class HTBApiSession:
       try:
         body = response.json().get("message", response.text[:400])
       except Exception:
-        body = response.text[:200]
+        body = response.text[:400]
       raise Exception(f"Request {method} to {URL} fail with {response.status_code}: {body}")
     data = response.json()
     self.app.post_message(DebugMsg(

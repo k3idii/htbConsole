@@ -42,46 +42,15 @@ Header {
             margin: 0 1 1 0;
             padding: 1 0;
             background: $background-lighten-1;
-            # border-top: outer $border;
-            # border-bottom: tall #000 30%;
             border: panel $border;
             border-title-color: $border-title-color;
             border-title-style: bold;
             border-title-align: right;
             overflow-y: auto;
 
-            #player_rank_label,
-            #player_rank_progress_label {
+            #player_stats_md {
+                width: 100%;
                 padding: 0 1;
-                width: 100%;
-            }
-
-            #player_rank_progress {                
-                padding: 0 1;
-                width: 100%;
-
-                #bar {
-                    width: 90%;
-                    padding-right: 1;
-                    .bar--bar {
-                        color: $secondary;
-                    }
-                }
-
-                #percentage {
-                    width: 10%;
-                    text-align: right;
-                }
-            }
-
-            #player_rank_progress_label {
-                width: 100%;
-                text-align: right;
-            }
-
-            #player_stats_table {
-                width: 100%;
-                padding: 1 1 0 1;
             }
         }
     }

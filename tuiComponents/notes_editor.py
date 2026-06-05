@@ -19,6 +19,7 @@ class NotesEditor(TextArea):
     with open(self.FILE, "w") as f:
       f.write(self.text)
     self.app.post_message(EventMsg(f"SAVED {self.FILE}"))
+    self.app.notify("Notes saved", timeout=1, severity="information")
 
   def set_filepath(self, fp):
     if self.FILE is not None:

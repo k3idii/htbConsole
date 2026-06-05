@@ -17,7 +17,8 @@ from appSettings import CTFSettings
 
 class CTFApp(App):
     CTF_API: HTBCTFSession
-
+    
+    ALLOW_SELECT = True
     CSS_PATH = "CTF.tcss"
 
     BINDINGS = [

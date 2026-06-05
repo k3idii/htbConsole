@@ -1,12 +1,6 @@
-from rich.table import Table
 from textual.app import ComposeResult
-from textual.containers import Container
-from textual.widgets import Static, ProgressBar, Label
 from textual.containers import Container, VerticalScroll
-
-from textual.widgets import DataTable, Static
-
-
+from textual.widgets import DataTable, Static, Markdown
 
 from httpApi import HTBApiSession
 from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg
@@ -140,208 +134,133 @@ class PlayerActivity(Static):
 
 
 class PlayerStats(Static):
-    """Static widget that shows the player stats."""
-
 
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)        
-        self.user_data = {
-            "id" : None,
-            "name" : None,
-            "points" : None,
-            "user_owns" : None,
-            "system_owns" : None,
-            "rank_progress" : None,
-            "user_bloods": None,
-            "system_bloods": None,
-            "respects": None,
-        }
-        self.current_season = {
-            "id" : None,
-            "name" : None
-        }
+        super().__init__(*args, **kwargs)
+        self.user_data = {}
+        self.current_season = {"id": None, "name": None}
         self.season_data = {
-            "league": None,
-            "rank": None,
-            "total_ranks": None,
-            "rank_suffix": None,
-            "total_season_points": None,
-            "flags_to_next_rank": {
-                "obtained": None,
-                "total": None
-            }
+            "league": None, "rank": None, "total_ranks": None,
+            "rank_suffix": None, "total_season_points": None,
+            "flags_to_next_rank": {"obtained": None, "total": None},
         }
 
     def compose(self) -> ComposeResult:
-        """Compose the widget."""
-        
         with Container(id="player_stats_container"):
-            yield Label(id="player_rank_label")
-            yield ProgressBar(id="player_rank_progress", show_percentage=True, show_eta=False, total=100)
-            yield Label(id="player_rank_progress_label")
-            yield Static(id="player_stats_table")
-
+            yield Markdown("*Loading...*", id="player_stats_md")
 
     async def on_mount(self) -> None:
-        """Mount the widget."""
         self.loading = True
         self.run_worker(self.update_profile())
 
     async def update_profile(self) -> None:
         try:
             await self.app.API.ensure_init()
-            table: Table = await self.get_profile()
-            await self._append_status(table)
+            await self._fetch_profile()
+            await self._fetch_season()
+            status = await self._fetch_status()
+            md = self._render_markdown(status)
             cntr = self.query_one("#player_stats_container")
-            cntr.border_title = f"{self.user_data['name']}::{self.user_data['id']}"
+            cntr.border_title = f"{self.user_data.get('name', '?')}::{self.user_data.get('id', '?')}"
             cntr.styles.border_title_color = "#9fef00"
-            self.query_one("#player_rank_label").update("Current level : " + RANK_MAP[self.user_data["rank"]])
-            self.query_one("#player_stats_table").update(table)
-            self.query_one("#player_rank_progress", ProgressBar).advance(self.user_data["rank_progress"])
-            self.query_one("#player_rank_progress_label").update("Progress to : " + RANK_MAP[self.user_data['rank']+1])
+            self.query_one("#player_stats_md", Markdown).update(md)
             self.loading = False
-
         except Exception as e:
-            self.loading = True
             self.post_message(ErrorMsg(e))
 
-    async def _append_status(self, table):
-        table.add_row()
-        table.add_row("[b]── Status ──", "")
+    async def _fetch_profile(self):
+        ses = self.app.get_api()
+        uid = ses.CRRENT_USER['info']['id']
+        data = await ses.async_get(f"/api/v4/profile/{uid}")
+        p = data['profile']
+        self.user_data = {
+            "id": p['id'], "name": p['name'], "rank": p['rank_id'],
+            "ranking": p['ranking'], "points": p['points'],
+            "user_owns": p['user_owns'], "system_owns": p['system_owns'],
+            "rank_progress": p['current_rank_progress'],
+            "user_bloods": p['user_bloods'], "system_bloods": p['system_bloods'],
+            "respects": p['respects'],
+        }
 
-        machine_text = "None"
+    async def _fetch_season(self):
+        data = await self.app.get_api().async_get("/api/v4/season/list")
+        for season in data.get("data", []):
+            if season.get("active"):
+                self.current_season = {"id": season["id"], "name": season["name"]}
+                break
+
+        if self.current_season["id"] is None:
+            return
+        data = await self.app.get_api().async_get(f"/api/v4/season/user/rank/{self.current_season['id']}")
+        d = data.get("data", {})
+        self.season_data["league"] = d.get("league")
+        self.season_data["rank"] = d.get("rank")
+        self.season_data["total_ranks"] = d.get("total_ranks")
+        self.season_data["rank_suffix"] = d.get("rank_suffix")
+        self.season_data["total_season_points"] = d.get("total_season_points")
+        ftnr = d.get("flags_to_next_rank", {})
+        self.season_data["flags_to_next_rank"]["obtained"] = ftnr.get("obtained")
+        self.season_data["flags_to_next_rank"]["total"] = ftnr.get("total")
+
+    async def _fetch_status(self):
+        status = {"machine": "None", "vpn": "Unknown", "workdir": self.app.settings.workdir}
         try:
             active = await self.app.get_api().async_get("/api/v4/machine/active", cache_this=0)
             info = active.get("info")
             if info:
-                machine_text = f"{info.get('name', '?')} ({info.get('ip', '?')})"
+                status["machine"] = f"{info.get('name', '?')} ({info.get('ip', '?')})"
         except Exception:
             pass
-        table.add_row("Active Machine", machine_text)
-
-        vpn_text = "Unknown"
         try:
             conn = await self.app.get_api().async_get("/api/v4/connection/status", cache_this=0)
-            if conn.get("data"):
-                srv = conn["data"].get("server", {})
-                vpn_text = srv.get("friendly_name", "Connected")
+            if conn:
+                lines = []
+                for c in conn:
+                    srv = c.get('server', {}).get('friendly_name', '?')
+                    cn = c.get('connection', {})
+                    lines.append(f"{c.get('type', '?')}/{srv} — {cn.get('name', '?')} `{cn.get('ip4', '?')}`")
+                status["vpn"] = " | ".join(lines)
             else:
-                vpn_text = "Disconnected"
+                status["vpn"] = "Disconnected"
         except Exception:
             pass
-        table.add_row("VPN", vpn_text)
-        table.add_row("Workdir", self.app.settings.workdir)
-            
-    def get_user_id(self) -> str:
-      
-         
-        """
-        Retrieves the user ID from the API endpoint.
+        return status
 
-        Returns:
-            str: The user ID.
-        """
-        ses : HTBApiSession = self.app.get_api()
-        id = ses.CRRENT_USER['info']['id']
-        self.user_data["id"] = id
-        return str(id)
+    def _progress_bar(self, pct):
+        filled = int(pct / 5)
+        empty = 20 - filled
+        return f"`{'█' * filled}{'░' * empty}` {pct}%"
 
+    def _render_markdown(self, status):
+        u = self.user_data
+        s = self.season_data
+        rank_name = RANK_MAP.get(u.get('rank', 0), '?')
+        next_rank = RANK_MAP.get(u.get('rank', 0) + 1, '?')
+        progress = u.get('rank_progress', 0)
 
-    async def get_profile(self):
-        """
-        Retrieves the profile data for the user.
-
-        Returns:
-            dict: The user's profile data.
-        """
-
-        ses : HTBApiSession = self.app.get_api()
-        self.get_user_id()
-        data = await ses.async_get("/api/v4/profile/" + str(self.user_data["id"]))
-        
-        self.user_data["id"] = data['profile']['id']
-        self.user_data["name"] = data['profile']['name']
-        self.user_data["rank"] = data['profile']['rank_id']
-        self.user_data["ranking"] = data['profile']['ranking']
-        self.user_data["points"] = data['profile']['points']
-        self.user_data["user_owns"] = data['profile']['user_owns']
-        self.user_data["system_owns"] = data['profile']['system_owns']
-        self.user_data["rank_progress"] = data['profile']['current_rank_progress']
-        self.user_data["user_bloods"] = data['profile']['user_bloods']
-        self.user_data["system_bloods"] = data['profile']['system_bloods']
-        self.user_data["respects"] = data['profile']['respects']
-
-        await self.get_current_season()
-        await self.get_season_data()
-
-        return self.make_profile()
-           
-        
-    async def get_current_season(self):
-      
-      data = await self.app.get_api().async_get("/api/v4/season/list")
-      for season in data["data"]:
-          if season["active"] == True:
-              self.current_season["id"] = season["id"]
-              self.current_season["name"] = season["name"]
-              return self.current_season
-      #raise Exception("No active season found")      
-            
- 
-    async def get_season_data(self):
-        """
-        Retrieves the season data for the user.
-
-        """
-  
-        if self.user_data["id"] is None:
-             self.get_user_id()
-             
-        if self.current_season["id"] is None:
-            await self.get_current_season()
-            
-        if self.current_season["id"] is None:
-            return "No active season"
-        data = await self.app.get_api().async_get("/api/v4/season/user/rank/" + str(self.current_season["id"]))
-        
-        # assign data to self.season_data
-        self.season_data["league"] = data["data"]["league"]
-        self.season_data["rank"] = data["data"]["rank"]
-        self.season_data["total_ranks"] = data["data"]["total_ranks"]
-        self.season_data["rank_suffix"] = data["data"]["rank_suffix"]
-        self.season_data["total_season_points"] = data["data"]["total_season_points"]
-        self.season_data["flags_to_next_rank"]["obtained"] = data["data"]["flags_to_next_rank"]["obtained"]
-        self.season_data["flags_to_next_rank"]["total"] = data["data"]["flags_to_next_rank"]["total"]
-
-        return self.season_data
- 
-    
-    def make_profile(self):
-        #self.log_stuff("PlayerStats.make_profile", user=self.user_data, season=self.season_data) 
-        table = Table.grid(
-            pad_edge=False,
-            expand=True
-        )
-
-        table.add_column(ratio=1)
-        table.add_column(ratio=1)
-
-
-        table.add_row(f"Rank: #{self.user_data['ranking']}", f"Points: {self.user_data['points']}") 
-        table.add_row()       
-        table.add_row(f"User Flag: {self.user_data['user_owns']}", f"System Flag: {self.user_data['system_owns']}")
-        table.add_row(f"User Blood: {self.user_data['user_bloods']}", f"System Blood: {self.user_data['system_bloods']}")
-        table.add_row()
-        table.add_row("Respects", f"{self.user_data['respects']}")
-        table.add_row()
-        
-        # season stats
-        table.add_row("Season Tier", str(self.season_data['league'] or '-'))
-        table.add_row("Season Rank", f"{self.season_data['rank'] or '-'}/{self.season_data['total_ranks'] or '-'}")
-        table.add_row("Season Points", str(self.season_data['total_season_points'] or 0))
-        table.add_row("Season Flags", f"{self.season_data['flags_to_next_rank']['obtained'] or 0}/{self.season_data['flags_to_next_rank']['total'] or 0}")
-        
-        return table
+        lines = [
+            f"### {rank_name}",
+            f"{self._progress_bar(progress)} → *{next_rank}*",
+            "",
+            f"**Rank** : #{u.get('ranking', '?')}  ",
+            f"**Points** : {u.get('points', 0)}  ",
+            f"**User Flags** : {u.get('user_owns', 0)}  ",
+            f"**System Flags** : {u.get('system_owns', 0)}  ",
+            f"**User Bloods** : {u.get('user_bloods', 0)}  ",
+            f"**System Bloods** : {u.get('system_bloods', 0)}  ",
+            f"**Respects** : {u.get('respects', 0)}  ",
+            "",
+            f"**Season** — {s.get('league') or '-'} \n"
+            f"Rank {s.get('rank') or '-'}/{s.get('total_ranks') or '-'} \n"
+            f"{s.get('total_season_points') or 0} pts · "
+            f"Flags {s['flags_to_next_rank'].get('obtained') or 0}/{s['flags_to_next_rank'].get('total') or 0}",
+            "",
+            "---",
+            f"- **Active Machine** — {status['machine']}",
+            f"- **VPN** — {status['vpn']}",
+            f"- **Workdir** — `{status['workdir']}`",
+        ]
+        return "\n".join(lines)
     
     
     
