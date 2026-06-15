@@ -4,9 +4,8 @@ from datetime import datetime
 
 from textual import on
 from textual.widgets import DataTable, Static, Button, Sparkline, Label, Markdown, Rule, Input, TabbedContent, TabPane
-from textual.containers import Container, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.app import ComposeResult
-from textual.reactive import Reactive
 
 from httpApi import HTBApiSession
 from .messages import DebugMsg, ErrorMsg, EventMsg
@@ -27,6 +26,33 @@ DIFFICULTY_COLORS = {
     "Hard": "#fe0000",
     "Insane": "#ffccff",
 }
+
+
+def _parse_machine(machine):
+    return {
+        "name": machine["name"],
+        "id": machine["id"],
+        "os": machine["os"],
+        "difficulty": machine.get("difficultyText", "Unknown"),
+        "user_owned": machine.get("authUserInUserOwns", False),
+        "root_owned": machine.get("authUserInRootOwns", False),
+        "points": machine.get("points", 0),
+        "rating": machine.get("star", 0),
+        "release": machine.get("release", ""),
+        "active": machine.get("active"),
+        "labels": machine.get("labels", []),
+        "feedbackForChart": machine.get("feedbackForChart", {}),
+        "is_competitive": machine.get("is_competitive", False),
+        "user_owns_count": machine.get("user_owns_count", 0),
+        "root_owns_count": machine.get("root_owns_count", 0),
+    }
+
+
+def _format_release(release, fmt="%Y-%m-%d"):
+    try:
+        return datetime.strptime(release, "%Y-%m-%dT%H:%M:%S.%fZ").strftime(fmt)
+    except Exception:
+        return release[:10] if release else ""
 
 
 class _PaginatedMachineTable(DataTable):
@@ -51,12 +77,12 @@ class _PaginatedMachineTable(DataTable):
         self._loaded = False
 
         self.add_column(label="ID")
-        self._name_col = self.add_column(label="Name", width=20)
+        self.add_column(label="Name", width=20)
         self.add_column(label="OS")
         self.add_column(label="User")
         self.add_column(label="Root")
         self.add_column(label="Points")
-        self.add_column(label="Rating")
+        self.add_column(label="Release", width=12)
 
     def on_data_table_row_selected(self, event) -> None:
         if event.control.id != self.id or event.row_key.value == self._MORE_KEY:
@@ -77,54 +103,24 @@ class _PaginatedMachineTable(DataTable):
     def _add_sentinel(self):
         self.add_row("", ".... more ....", "", "", "", "", "", key=self._MORE_KEY)
 
-    def _parse_machine(self, machine):
-        return {
-            "name": machine["name"],
-            "id": machine["id"],
-            "os": machine["os"],
-            "difficulty": machine.get("difficultyText", "Unknown"),
-            "user_owned": machine.get("authUserInUserOwns", False),
-            "root_owned": machine.get("authUserInRootOwns", False),
-            "points": machine.get("points", 0),
-            "rating": machine.get("star", 0),
-            "release": machine.get("release", ""),
-            "active": machine.get("active"),
-            "labels": machine.get("labels", []),
-            "feedbackForChart": machine.get("feedbackForChart", {}),
-            "is_competitive": machine.get("is_competitive", False),
-            "user_owns_count": machine.get("user_owns_count", 0),
-            "root_owns_count": machine.get("root_owns_count", 0),
-        }
-
-    def _format_name(self, mdata, active_id=None):
-        color = DIFFICULTY_COLORS.get(mdata['difficulty'], "#FFFFFF")
-        prefix = "▶ " if mdata['id'] == active_id else ""
-        return f"{prefix}[{color}]{mdata['name']}"
 
     def _append_rows(self, items):
-        active_id = getattr(self.app, 'active_machine_id', None)
         for machine in items:
             mid = machine["id"]
             if mid in self.machine_data:
                 continue
-            mdata = self._parse_machine(machine)
+            mdata = _parse_machine(machine)
             self.machine_data[mid] = mdata
+            color = DIFFICULTY_COLORS.get(mdata['difficulty'], "#FFFFFF")
             self.add_row(
                 str(mid),
-                self._format_name(mdata, active_id),
+                f"[{color}]{mdata['name']}",
                 mdata['os'],
                 "✅" if mdata['user_owned'] else "❌",
                 "✅" if mdata['root_owned'] else "❌",
                 str(mdata['points']),
-                str(mdata['rating']),
+                _format_release(mdata['release']),
                 key=mid)
-
-    def mark_active(self, active_id):
-        for mid, mdata in self.machine_data.items():
-            try:
-                self.update_cell(mid, self._name_col, self._format_name(mdata, active_id))
-            except Exception:
-                pass
 
     async def _do_load(self):
         try:
@@ -203,12 +199,12 @@ class SeasonalMachines(DataTable):
         self._loaded = False
 
         self.add_column(label="ID")
-        self._name_col = self.add_column(label="Name", width=20)
+        self.add_column(label="Name", width=20)
         self.add_column(label="OS")
         self.add_column(label="User")
         self.add_column(label="Root")
         self.add_column(label="Points")
-        self.add_column(label="Rating")
+        self.add_column(label="Release", width=12)
 
     def on_data_table_row_selected(self, event) -> None:
         if event.control.id != self.id:
@@ -220,18 +216,6 @@ class SeasonalMachines(DataTable):
         else:
             machine_details.clear_context()
 
-    def _format_name(self, mdata, active_id=None):
-        color = DIFFICULTY_COLORS.get(mdata['difficulty'], "#FFFFFF")
-        prefix = "▶ " if mdata['id'] == active_id else ""
-        return f"{prefix}[{color}]{mdata['name']}"
-
-    def mark_active(self, active_id):
-        for mid, mdata in self.machine_data.items():
-            try:
-                self.update_cell(mid, self._name_col, self._format_name(mdata, active_id))
-            except Exception:
-                pass
-
     def load_if_needed(self):
         if not self._loaded:
             self._loaded = True
@@ -242,40 +226,31 @@ class SeasonalMachines(DataTable):
             await self.get_api().ensure_init()
             self.machine_data = {}
             self.active_ids = set()
-            active_id = getattr(self.app, 'active_machine_id', None)
             data = await self.get_api().async_get("/api/v4/machine/paginated?per_page=100")
             for machine in data.get("data", []):
                 if not machine.get("is_competitive", False):
                     continue
                 mid = machine["id"]
                 self.active_ids.add(mid)
-                self.machine_data[mid] = {
-                    "name": machine["name"],
-                    "id": mid,
-                    "os": machine["os"],
-                    "difficulty": machine.get("difficultyText", "Unknown"),
-                    "user_owned": machine.get("authUserInUserOwns", False),
-                    "root_owned": machine.get("authUserInRootOwns", False),
-                    "points": machine.get("points", 0),
-                    "rating": machine.get("star", 0),
-                    "release": machine.get("release", ""),
-                    "active": machine.get("active"),
-                    "labels": machine.get("labels", []),
-                    "feedbackForChart": machine.get("feedbackForChart", {}),
-                    "is_competitive": True,
-                    "user_owns_count": machine.get("user_owns_count", 0),
-                    "root_owns_count": machine.get("root_owns_count", 0),
-                }
+                mdata = _parse_machine(machine)
+                mdata["is_competitive"] = True
+                self.machine_data[mid] = mdata
             self.clear()
-            for mid, mdata in self.machine_data.items():
+            sorted_machines = sorted(
+                self.machine_data.values(),
+                key=lambda m: m.get('release', ''), reverse=True)
+            for mdata in sorted_machines:
+                mid = mdata['id']
+                color = DIFFICULTY_COLORS.get(mdata['difficulty'], "#FFFFFF")
+                short_date = _format_release(mdata.get('release', ''))
                 self.add_row(
                     str(mid),
-                    self._format_name(mdata, active_id),
+                    f"[{color}]{mdata['name']}",
                     mdata['os'],
                     "✅" if mdata['user_owned'] else "❌",
                     "✅" if mdata['root_owned'] else "❌",
                     str(mdata['points']),
-                    str(mdata['rating']),
+                    short_date,
                     key=mid)
             self.loading = False
             self.app.post_message(DebugMsg("SeasonalMachines", machine_count=len(self.machine_data)))
@@ -297,11 +272,9 @@ class MachineDetails(Static):
         }
     }
 
-    active_machine_data = Reactive({})
-
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.selected_machine_id: int = 0
+        self.selected_machine_id = None
         self.selected_machine_data = {}
         self.border_title = "Machine Info"
 
@@ -309,6 +282,17 @@ class MachineDetails(Static):
         with TabbedContent(id="machine_tabbed_content"):
             with TabPane("Info", id="machine_info_tab"):
                 yield Markdown("", id="machine_details")
+                with Container(id="machine_control_buttons"):
+                    with Horizontal(id="machine_action_row"):
+                        yield Button("Start", id="spawn_machine_button", disabled=True)
+                        yield Button("Stop", id="stop_machine_button", variant="error", disabled=True)
+                        yield Button("Reset", id="reset_machine_button", variant="default", disabled=True)
+                        yield Button("Copy IP", id="copy_ip_button", disabled=True)
+                        yield Button("Refresh", id="refresh_machine_button", disabled=True)
+                    with Horizontal(id="submit_flag_container"):
+                        yield Input(placeholder="Submit Flag", id="submit_flag_input", disabled=True)
+                        yield Button("Submit", id="submit_flag_button", disabled=True)
+            with TabPane("Feedback", id="machine_feedback_tab"):
                 with Container(id="machine_feedback_container"):
                     yield Rule()
                     with Container(id="feedback_container"):
@@ -316,13 +300,6 @@ class MachineDetails(Static):
                         yield Sparkline(id="feedback_sparkline_medium")
                         yield Sparkline(id="feedback_sparkline_hard")
                     yield Label("User Rated Difficulty")
-                with Container(id="machine_control_buttons"):
-                    with Container(id="submit_flag_container"):
-                        yield Input(placeholder="Submit Flag", id="submit_flag_input")
-                        yield Button("Submit", id="submit_flag_button")
-                    yield Button("Spawn Machine", id="spawn_machine_button")
-                    yield Button("Stop Machine", id="stop_machine_button", variant="error")
-                    yield Button("Reset Machine", id="reset_machine_button", variant="default")
             with TabPane("Notes", id="machine_notes_tab"):
                 yield Label("Notes  <ctrl+s> to save", id="machine_notes_path")
                 yield NotesEditor("", id="machine_notes_editor")
@@ -332,7 +309,7 @@ class MachineDetails(Static):
 
     def set_context(self, machine_id: int, machine_data: dict) -> None:
         self.selected_machine_id = machine_id
-        self.selected_machine_data = machine_data
+        self.selected_machine_data = dict(machine_data)
         self.app.post_message(EventMsg(f"[+] Setting context for machine: {machine_id}"))
         self.border_title = f"{self.selected_machine_data['name']}::{self.selected_machine_id}"
         self.handle_display_controls()
@@ -364,36 +341,26 @@ class MachineDetails(Static):
     def has_active_machine(self) -> bool:
         return getattr(self.app, 'active_machine_id', None) is not None
 
-    def watch_active_machine_data(self, old_value, new_value) -> None:
-        self.app.post_message(EventMsg(f"[+] Active machine data changed"))
-        if new_value:
-            mid = new_value.get("id")
-            if mid:
-                self.set_context(mid, new_value)
-        else:
-            self.clear_context()
-
     def enable_controls(self) -> None:
-        for button in self.query(Button):
-            button.disabled = False
-        self.query_one("#submit_flag_input").disabled = False
+        self.handle_display_controls()
 
     def disable_controls(self) -> None:
         for button in self.query(Button):
             button.disabled = True
-        self.query_one("#submit_flag_input").disabled = True
+        self.query_one("#submit_flag_input", Input).disabled = True
 
     def handle_display_controls(self) -> None:
-        self.enable_controls()
-        if self.has_active_machine():
-            self.add_class("active")
-            self.remove_class("inactive")
-        elif self.selected_machine_id is not None:
-            self.remove_class("active")
-            self.add_class("inactive")
-        else:
-            self.remove_class("active")
-            self.remove_class("inactive")
+        is_active = self._is_selected_active()
+        has_selection = self.selected_machine_id is not None
+        has_ip = bool((getattr(self.app, 'active_machine_info', None) or {}).get("ip")) if is_active else False
+
+        self.query_one("#spawn_machine_button", Button).disabled = not has_selection or is_active
+        self.query_one("#stop_machine_button", Button).disabled = not is_active
+        self.query_one("#reset_machine_button", Button).disabled = not is_active
+        self.query_one("#copy_ip_button", Button).disabled = not has_ip
+        self.query_one("#refresh_machine_button", Button).disabled = not has_selection
+        self.query_one("#submit_flag_input", Input).disabled = not is_active
+        self.query_one("#submit_flag_button", Button).disabled = not is_active
 
     def make_feedback_sparkline(self) -> None:
         feedback = self.selected_machine_data.get("feedbackForChart", {})
@@ -413,7 +380,7 @@ class MachineDetails(Static):
         diff = d['difficulty']
         user_flag = "User Flag : ✅" if d['user_owned'] else "User Flag : ❌"
         root_flag = "Root Flag : ✅" if d['root_owned'] else "Root Flag : ❌"
-        release_date = datetime.strptime(d["release"], "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%B %d, %Y")
+        release_date = _format_release(d["release"], "%B %d, %Y")
 
         lines = [
             f"**OS** : {d['os']}  ",
@@ -441,6 +408,31 @@ class MachineDetails(Static):
 
         self.make_feedback_sparkline()
         return "\n".join(lines)
+
+    @on(Button.Pressed, selector="#copy_ip_button")
+    def copy_ip_pressed(self) -> None:
+        info = getattr(self.app, 'active_machine_info', None) or {}
+        ip = info.get("ip", "")
+        if ip:
+            self.app.copy_to_clipboard(ip)
+            self.app.notify(f"Copied: {ip}", timeout=3)
+
+    @on(Button.Pressed, selector="#refresh_machine_button")
+    async def refresh_machine_pressed(self) -> None:
+        self.disable_controls()
+        mid = self.selected_machine_id
+        try:
+            data = await self.app.API.async_get(f"/api/v4/machine/profile/{mid}", cache_this=0)
+            raw = data.get("info", data)
+            self.selected_machine_data = {**self.selected_machine_data, **_parse_machine(raw)}
+            if self._is_selected_active():
+                await self.app.query_one(ContainerMachines).refresh_active()
+            self.query_one("#machine_details", Markdown).update(self.make_machine_details())
+            self.app.notify("Machine info refreshed", timeout=3)
+        except Exception as e:
+            self.app.notify(f"Refresh failed: {e}", severity="error", timeout=5)
+            self.app.post_message(ErrorMsg(e))
+        self.enable_controls()
 
     @on(Button.Pressed, selector="#spawn_machine_button")
     async def spawn_button_pressed(self) -> None:
@@ -632,8 +624,9 @@ class ContainerMachines(Container):
                 if not info:
                     return
                 self._apply_active(info)
-                if info.get("ip"):
-                    self.app.notify(f"Machine ready: {info['ip']}", timeout=5)
+                ip = info.get("ip")
+                if ip:
+                    self.app.notify(f"Machine ready: {ip}", timeout=5)
                     return
                 self.app.notify("Still waiting for IP...", timeout=5)
             except Exception:
@@ -642,18 +635,17 @@ class ContainerMachines(Container):
     def _apply_active(self, info):
         details = self.query_one(MachineDetails)
         if info:
-            mid = info.get("id")
-            self.app.active_machine_id = mid
+            self.app.active_machine_id = info.get("id")
             self.app.active_machine_info = info
             self._update_status(info)
-            self._mark_all_tables(mid)
-            details.active_machine_data = info
         else:
             self.app.active_machine_id = None
             self.app.active_machine_info = None
             self._update_status(None)
-            self._mark_all_tables(None)
-            details.active_machine_data = {}
+        if details.selected_machine_id is not None:
+            details.handle_display_controls()
+            if details._is_selected_active():
+                details.query_one("#machine_details", Markdown).update(details.make_machine_details())
 
     def _update_status(self, machine_data):
         label = self.query_one("#machine_active_status", Static)
@@ -670,18 +662,18 @@ class ContainerMachines(Container):
         else:
             label.update("Active: [dim]NONE[/]")
 
-    def _mark_all_tables(self, active_id):
-        for table_cls in [CurrentMachines, SeasonalMachines, RetiredMachines]:
-            try:
-                table = self.query_one(table_cls)
-                table.mark_active(active_id)
-                table.refresh()
-            except Exception:
-                pass
+    @on(Button.Pressed, selector="#machines_reload_button")
+    def reload_all(self, event) -> None:
+        self.query_one(CurrentMachines).reload_machines()
+        self.query_one(SeasonalMachines)._loaded = False
+        self.query_one(SeasonalMachines).load_if_needed()
+        self.query_one(RetiredMachines).reload_machines()
+        self.app.notify("Reloading machines...", timeout=3)
 
     def compose(self) -> ComposeResult:
         with Container(id="machines_container") as machines_container:
             machines_container.border_title = "Machines"
+            yield Button("Reload", id="machines_reload_button")
             with TabbedContent(id="machines_tabbed_content"):
                 with TabPane("Current Machines", id="current_machines_tab"):
                     with Container(id="current_machines_container"):
