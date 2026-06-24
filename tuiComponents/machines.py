@@ -260,17 +260,8 @@ class SeasonalMachines(DataTable):
 
 class MachineDetails(Static):
 
-    endpoint = "/api/v4/search/fetch?query="
-    endpoints = {
-        "POST": {
-            "spawn_machine": "/api/v4/vm/spawn",
-            "terminate_machine": "/api/v4/vm/terminate",
-            "reset_machine": "/api/v4/vm/reset",
-            "start_arena_machine": "/api/v4/arena/start",
-            "stop_arena_machine": "/api/v4/arena/stop",
-            "reset_arena_machine": "/api/v4/arena/reset",
-        }
-    }
+    SPAWN_ENDPOINT = "/api/v4/vm/spawn"
+    ARENA_START_ENDPOINT = "/api/v4/arena/start"
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -283,15 +274,7 @@ class MachineDetails(Static):
             with TabPane("Info", id="machine_info_tab"):
                 yield Markdown("", id="machine_details")
                 with Container(id="machine_control_buttons"):
-                    with Horizontal(id="machine_action_row"):
-                        yield Button("Start", id="spawn_machine_button", disabled=True)
-                        yield Button("Stop", id="stop_machine_button", variant="error", disabled=True)
-                        yield Button("Reset", id="reset_machine_button", variant="default", disabled=True)
-                        yield Button("Copy IP", id="copy_ip_button", disabled=True)
-                        yield Button("Refresh", id="refresh_machine_button", disabled=True)
-                    with Horizontal(id="submit_flag_container"):
-                        yield Input(placeholder="Submit Flag", id="submit_flag_input", disabled=True)
-                        yield Button("Submit", id="submit_flag_button", disabled=True)
+                    yield Button("Start", id="spawn_machine_button", disabled=True)
             with TabPane("Feedback", id="machine_feedback_tab"):
                 with Container(id="machine_feedback_container"):
                     yield Rule()
@@ -345,97 +328,51 @@ class MachineDetails(Static):
         self.handle_display_controls()
 
     def disable_controls(self) -> None:
-        for button in self.query(Button):
-            button.disabled = True
-        self.query_one("#submit_flag_input", Input).disabled = True
+        self.query_one("#spawn_machine_button", Button).disabled = True
 
     def handle_display_controls(self) -> None:
-        is_active = self._is_selected_active()
         has_selection = self.selected_machine_id is not None
-        has_ip = bool((getattr(self.app, 'active_machine_info', None) or {}).get("ip")) if is_active else False
-
-        self.query_one("#spawn_machine_button", Button).disabled = not has_selection or is_active
-        self.query_one("#stop_machine_button", Button).disabled = not is_active
-        self.query_one("#reset_machine_button", Button).disabled = not is_active
-        self.query_one("#copy_ip_button", Button).disabled = not has_ip
-        self.query_one("#refresh_machine_button", Button).disabled = not has_selection
-        self.query_one("#submit_flag_input", Input).disabled = not is_active
-        self.query_one("#submit_flag_button", Button).disabled = not is_active
+        self.query_one("#spawn_machine_button", Button).disabled = not has_selection
 
     def make_feedback_sparkline(self) -> None:
         feedback = self.selected_machine_data.get("feedbackForChart", {})
         feedback_data = list(feedback.values())
         self.query_one("#feedback_sparkline_easy").data = feedback_data[slice(3)]
         self.query_one("#feedback_sparkline_medium").data = feedback_data[slice(3, 6)]
-        self.query_one("#feedback_sparkline_hard").data = feedback_data[slice(7, 10)]
-
-    def _is_selected_active(self):
-        active_id = getattr(self.app, 'active_machine_id', None)
-        if active_id is None or self.selected_machine_id is None:
-            return False
-        return int(active_id) == int(self.selected_machine_id)
+        self.query_one("#feedback_sparkline_hard").data = feedback_data[slice(6, 9)]
 
     def make_machine_details(self) -> str:
         d = self.selected_machine_data
-        diff = d['difficulty']
-        user_flag = "User Flag : ✅" if d['user_owned'] else "User Flag : ❌"
-        root_flag = "Root Flag : ✅" if d['root_owned'] else "Root Flag : ❌"
-        release_date = _format_release(d["release"], "%B %d, %Y")
+        if not d:
+            return ""
+        diff = d.get('difficulty', 'Unknown')
+        user_flag = "User Flag : ✅" if d.get('user_owned') else "User Flag : ❌"
+        root_flag = "Root Flag : ✅" if d.get('root_owned') else "Root Flag : ❌"
+        release_date = _format_release(d.get("release", ""), "%B %d, %Y")
 
         lines = [
-            f"**OS** : {d['os']}  ",
+            f"**OS** : {d.get('os', '?')}  ",
             f"**Difficulty** : {diff}  ",
             f"{user_flag}  ",
             f"{root_flag}  ",
-            f"**Points** : {d['points']}  ",
-            f"**Rating** : {d['rating']}  ",
-            f"**User Owns** : {d['user_owns_count']}  ",
-            f"**Root Owns** : {d['root_owns_count']}  ",
+            f"**Points** : {d.get('points', 0)}  ",
+            f"**Rating** : {d.get('rating', 0)}  ",
+            f"**User Owns** : {d.get('user_owns_count', 0)}  ",
+            f"**Root Owns** : {d.get('root_owns_count', 0)}  ",
             f"**Release** : {release_date}  ",
         ]
-
-        if self._is_selected_active():
-            info = getattr(self.app, 'active_machine_info', None) or {}
-            lines.append("")
-            lines.append("---")
-            lines.append(f"**IP** : `{info.get('ip', '?')}`  ")
-            if info.get("type"):
-                lines.append(f"**Type** : {info['type']}  ")
-            if info.get("expires_at"):
-                lines.append(f"**Expires** : {info['expires_at']}  ")
-            if info.get("lab_server"):
-                lines.append(f"**Server** : {info['lab_server']}  ")
-
         self.make_feedback_sparkline()
         return "\n".join(lines)
 
-    @on(Button.Pressed, selector="#copy_ip_button")
-    def copy_ip_pressed(self) -> None:
-        info = getattr(self.app, 'active_machine_info', None) or {}
-        ip = info.get("ip", "")
-        if ip:
-            self.app.copy_to_clipboard(ip)
-            self.app.notify(f"Copied: {ip}", timeout=3)
-
-    @on(Button.Pressed, selector="#refresh_machine_button")
-    async def refresh_machine_pressed(self) -> None:
-        self.disable_controls()
-        mid = self.selected_machine_id
-        try:
-            data = await self.app.API.async_get(f"/api/v4/machine/profile/{mid}", cache_this=0)
-            raw = data.get("info", data)
-            self.selected_machine_data = {**self.selected_machine_data, **_parse_machine(raw)}
-            if self._is_selected_active():
-                await self.app.query_one(ContainerMachines).refresh_active()
-            self.query_one("#machine_details", Markdown).update(self.make_machine_details())
-            self.app.notify("Machine info refreshed", timeout=3)
-        except Exception as e:
-            self.app.notify(f"Refresh failed: {e}", severity="error", timeout=5)
-            self.app.post_message(ErrorMsg(e))
-        self.enable_controls()
-
     @on(Button.Pressed, selector="#spawn_machine_button")
     async def spawn_button_pressed(self) -> None:
+        if self.has_active_machine():
+            self.app.notify(
+                "A machine is already active. Stop it before starting another.",
+                severity="warning", timeout=5)
+            return
+        if self.selected_machine_id is None:
+            return
         self.disable_controls()
         await self.start_machine(self.selected_machine_id)
         self.enable_controls()
@@ -444,10 +381,10 @@ class MachineDetails(Static):
         try:
             if self._is_competitive():
                 self.app.post_message(EventMsg(f"[+] Starting arena machine"))
-                data = await self.start_arena_machine()
+                data = await self.app.API.async_post(self.ARENA_START_ENDPOINT, {})
             else:
                 self.app.post_message(EventMsg(f"[+] Starting machine with id: {machine_id}"))
-                data = await self.spawn_machine(machine_id)
+                data = await self.app.API.async_post(self.SPAWN_ENDPOINT, {"machine_id": machine_id})
             if data:
                 self.app.post_message(DebugMsg(f"[!] {data}"))
                 if "message" in data:
@@ -455,83 +392,142 @@ class MachineDetails(Static):
                     self.notify(data["message"])
                     await self.app.query_one(ContainerMachines).refresh_active()
         except Exception as e:
+            self.app.notify(f"Start failed: {e}", severity="error", timeout=5)
             self.app.post_message(ErrorMsg(e))
 
-    @on(Button.Pressed, selector="#stop_machine_button")
-    async def stop_button_pressed(self) -> None:
-        self.disable_controls()
-        await self.stop_machine()
-        self.enable_controls()
 
-    async def stop_machine(self) -> None:
+class ActiveMachinePanel(Static):
+    """Compact panel showing the currently active machine with stop / restart controls."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.border_title = "Active Machine"
+
+    def compose(self) -> ComposeResult:
+        yield Static("[dim]No active machine[/]", id="active_machine_details")
+        with Horizontal(id="active_action_row"):
+            yield Button("Stop", id="active_stop_button", variant="error", disabled=True)
+            yield Button("Restart", id="active_reset_button", disabled=True)
+            yield Button("Copy IP", id="active_copy_ip_button", disabled=True)
+            yield Button("Refresh", id="active_refresh_button", disabled=True)
+        with Horizontal(id="active_submit_flag_container"):
+            yield Input(placeholder="Submit Flag", id="active_submit_flag_input", disabled=True)
+            yield Button("Submit", id="active_submit_flag_button", disabled=True)
+
+    def _info(self) -> dict:
+        return getattr(self.app, 'active_machine_info', None) or {}
+
+    def _active_id(self):
+        return getattr(self.app, 'active_machine_id', None)
+
+    def _is_competitive(self) -> bool:
+        return bool(self._info().get("is_competitive", False))
+
+    def update_active(self) -> None:
+        info = self._info()
+        active = self._active_id() is not None
+        ip = info.get("ip", "")
+        detail = self.query_one("#active_machine_details", Static)
+        if active:
+            segs = [f"[bold green]{info.get('name', '?')}[/]"]
+            segs.append(f"[cyan]{ip}[/]" if ip else "[yellow]starting…[/]")
+            if info.get("os"):
+                segs.append(f"({info['os']})")
+            if info.get("type"):
+                segs.append(f"· {info['type']}")
+            if info.get("expires_at"):
+                segs.append(f"· expires {info['expires_at']}")
+            detail.update("  ".join(segs))
+        else:
+            detail.update("[dim]No active machine[/]")
+        self.query_one("#active_stop_button", Button).disabled = not active
+        self.query_one("#active_reset_button", Button).disabled = not active
+        self.query_one("#active_copy_ip_button", Button).disabled = not bool(ip)
+        self.query_one("#active_refresh_button", Button).disabled = not active
+        self.query_one("#active_submit_flag_input", Input).disabled = not active
+        self.query_one("#active_submit_flag_button", Button).disabled = not active
+
+    def _disable_all(self) -> None:
+        for button in self.query(Button):
+            button.disabled = True
+        self.query_one("#active_submit_flag_input", Input).disabled = True
+
+    @on(Button.Pressed, selector="#active_copy_ip_button")
+    def copy_ip_pressed(self) -> None:
+        ip = self._info().get("ip", "")
+        if ip:
+            self.app.copy_to_clipboard(ip)
+            self.app.notify(f"Copied: {ip}", timeout=3)
+
+    @on(Button.Pressed, selector="#active_refresh_button")
+    async def refresh_pressed(self) -> None:
+        self._disable_all()
         try:
-            if self._is_competitive():
-                self.app.post_message(EventMsg(f"[-] Stopping arena machine"))
-                data = await self.stop_arena_machine()
-            else:
-                self.app.post_message(EventMsg(f"[-] Stopping machine with id: {self.selected_machine_id}"))
-                data = await self.terminate_machine(self.selected_machine_id)
-            if data:
-                self.app.post_message(DebugMsg(f"[!] {data}"))
-                if "message" in data:
-                    self.app.post_message(EventMsg(f"[+] Machine stopped"))
-                    self.notify(data["message"])
-                    await self.app.query_one(ContainerMachines).refresh_active()
+            await self.app.query_one(ContainerMachines).refresh_active()
         except Exception as e:
+            self.app.notify(f"Refresh failed: {e}", severity="error", timeout=5)
             self.app.post_message(ErrorMsg(e))
+        self.update_active()
 
-    @on(Button.Pressed, selector="#reset_machine_button")
-    async def reset_button_pressed(self) -> None:
-        self.disable_controls()
-        await self.reset_machine()
-        self.enable_controls()
+    @on(Button.Pressed, selector="#active_stop_button")
+    async def stop_pressed(self) -> None:
+        self._disable_all()
+        await self._run_action("stop")
 
-    async def reset_machine(self) -> None:
+    @on(Button.Pressed, selector="#active_reset_button")
+    async def reset_pressed(self) -> None:
+        self._disable_all()
+        await self._run_action("reset")
+
+    async def _run_action(self, action: str) -> None:
+        mid = self._active_id()
+        if mid is None:
+            self.update_active()
+            return
+        arena = self._is_competitive()
+        paths = {
+            ("stop", False): "/api/v4/vm/terminate",
+            ("stop", True): "/api/v4/arena/stop",
+            ("reset", False): "/api/v4/vm/reset",
+            ("reset", True): "/api/v4/arena/reset",
+        }
+        payload = {} if arena else {"machine_id": mid}
         try:
-            if self._is_competitive():
-                self.app.post_message(EventMsg(f"[-] Resetting arena machine"))
-                data = await self.reset_arena_machine()
-            else:
-                self.app.post_message(EventMsg(f"[-] Resetting machine with id: {self.selected_machine_id}"))
-                data = await self.respawn_machine(self.selected_machine_id)
-            if data:
-                self.app.post_message(DebugMsg(f"[!] {data}"))
-                if "message" in data:
-                    self.app.post_message(DebugMsg(f"[!] {data['message']}"))
-                    self.notify(data["message"])
+            self.app.post_message(EventMsg(f"[-] {action.title()} active machine {mid}"))
+            data = await self.app.API.async_post(paths[(action, arena)], payload)
+            if data and data.get("message"):
+                self.notify(data["message"])
+            await self.app.query_one(ContainerMachines).refresh_active()
         except Exception as e:
+            self.app.notify(f"{action.title()} failed: {e}", severity="error", timeout=5)
             self.app.post_message(ErrorMsg(e))
+        self.update_active()
 
-    async def _do_submit_flag(self):
-        inp = self.query_one("#submit_flag_input", Input)
+    @on(Input.Submitted, selector="#active_submit_flag_input")
+    async def flag_submitted(self, event) -> None:
+        await self._submit_flag()
+
+    @on(Button.Pressed, selector="#active_submit_flag_button")
+    async def flag_button_pressed(self, event) -> None:
+        await self._submit_flag()
+
+    async def _submit_flag(self) -> None:
+        inp = self.query_one("#active_submit_flag_input", Input)
         flag = inp.value.strip()
         if not flag:
             return
-        self.disable_controls()
+        mid = self._active_id()
+        if mid is None:
+            return
         inp.clear()
-        self.app.notify(f"Submitting flag for machine {self.selected_machine_id}...", timeout=3)
-        await self.submit_flag(flag, self.selected_machine_id)
-        self.enable_controls()
-
-    @on(Input.Submitted, selector="#submit_flag_input")
-    async def handle_input(self, event: Input.Submitted) -> None:
-        await self._do_submit_flag()
-
-    @on(Button.Pressed, selector="#submit_flag_button")
-    async def submit_flag_button_pressed(self, event) -> None:
-        await self._do_submit_flag()
-
-    async def submit_flag(self, flag: str, machine_id: int = None) -> None:
+        self._disable_all()
+        self.app.notify(f"Submitting flag for machine {mid}...", timeout=3)
         try:
             if self._is_competitive():
-                self.app.post_message(EventMsg(f"[+] Submitting flag for arena machine"))
-                data = await self.app.API.async_post(
-                    "/api/v4/arena/own", {"flag": flag})
+                data = await self.app.API.async_post("/api/v4/arena/own", {"flag": flag})
             else:
-                self.app.post_message(EventMsg(f"[+] Submitting flag for machine {machine_id}"))
                 data = await self.app.API.async_post(
-                    "/api/v5/machine/own",
-                    {"id": int(machine_id), "flag": flag})
+                    "/api/v5/machine/own", {"id": int(mid), "flag": flag})
             self.app.post_message(DebugMsg(f"Flag response: {data}"))
             msg = data.get("message", str(data)) if data else "No response"
             if data and data.get("success"):
@@ -543,33 +539,7 @@ class MachineDetails(Static):
         except Exception as e:
             self.app.notify(f"Flag submit error: {e}", severity="error", timeout=10)
             self.app.post_message(ErrorMsg(e))
-
-    async def spawn_machine(self, machine_id: int):
-        return await self.app.API.async_post(
-            self.endpoints["POST"]["spawn_machine"],
-            {"machine_id": machine_id})
-
-    async def terminate_machine(self, machine_id: int):
-        return await self.app.API.async_post(
-            self.endpoints["POST"]["terminate_machine"],
-            {"machine_id": machine_id})
-
-    async def respawn_machine(self, machine_id: int):
-        return await self.app.API.async_post(
-            self.endpoints["POST"]["reset_machine"],
-            {"machine_id": machine_id})
-
-    async def start_arena_machine(self):
-        return await self.app.API.async_post(
-            self.endpoints["POST"]["start_arena_machine"], {})
-
-    async def stop_arena_machine(self):
-        return await self.app.API.async_post(
-            self.endpoints["POST"]["stop_arena_machine"], {})
-
-    async def reset_arena_machine(self):
-        return await self.app.API.async_post(
-            self.endpoints["POST"]["reset_arena_machine"], {})
+        self.update_active()
 
 
 
@@ -582,6 +552,7 @@ class ContainerMachines(Container):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._activated = False
+        self._polling = False
 
     def action_focus_list(self):
         try:
@@ -610,57 +581,52 @@ class ContainerMachines(Container):
     async def refresh_active(self):
         await self._fetch_active_machine()
         info = self.app.active_machine_info
-        if info and not info.get("ip"):
+        if info and not info.get("ip") and not self._polling:
             self.app.notify("Machine starting — waiting for IP...", timeout=5)
             self.run_worker(self._poll_for_ip())
 
     async def _poll_for_ip(self):
         import asyncio
-        for _ in range(12):
-            await asyncio.sleep(5)
-            try:
-                data = await self.app.API.async_get("/api/v4/machine/active", cache_this=0)
-                info = data.get("info")
+        self._polling = True
+        try:
+            for _ in range(36):
+                await asyncio.sleep(5)
+                try:
+                    data = await self.app.API.async_get("/api/v4/machine/active", cache_this=0)
+                    info = data.get("info")
+                except Exception:
+                    return
                 if not info:
                     return
                 self._apply_active(info)
-                ip = info.get("ip")
-                if ip:
-                    self.app.notify(f"Machine ready: {ip}", timeout=5)
+                if info.get("ip"):
+                    self.app.notify(f"Machine ready: {info['ip']}", timeout=5)
                     return
-                self.app.notify("Still waiting for IP...", timeout=5)
-            except Exception:
-                return
+            self.app.notify(
+                "Machine still starting after a while — press Refresh on the active panel to update.",
+                severity="warning", timeout=8)
+        finally:
+            self._polling = False
 
     def _apply_active(self, info):
-        details = self.query_one(MachineDetails)
         if info:
-            self.app.active_machine_id = info.get("id")
+            aid = info.get("id")
+            info = dict(info)
+            info["is_competitive"] = self._active_is_competitive(aid)
+            self.app.active_machine_id = aid
             self.app.active_machine_info = info
-            self._update_status(info)
         else:
             self.app.active_machine_id = None
             self.app.active_machine_info = None
-            self._update_status(None)
-        if details.selected_machine_id is not None:
-            details.handle_display_controls()
-            if details._is_selected_active():
-                details.query_one("#machine_details", Markdown).update(details.make_machine_details())
+        self.query_one(ActiveMachinePanel).update_active()
 
-    def _update_status(self, machine_data):
-        label = self.query_one("#machine_active_status", Static)
-        if machine_data:
-            name = machine_data.get("name", "?")
-            ip = machine_data.get("ip", "")
-            os_name = machine_data.get("os", "")
-            parts = [f"[bold green]{name}[/]"]
-            if ip:
-                parts.append(f"@ {ip}")
-            if os_name:
-                parts.append(f"({os_name})")
-            label.update(f"Active: {' '.join(parts)}")
-        else:
-            label.update("Active: [dim]NONE[/]")
+    def _active_is_competitive(self, aid) -> bool:
+        if aid is None:
+            return False
+        try:
+            return aid in self.query_one(SeasonalMachines).active_ids
+        except Exception:
+            return False
 
     @on(Button.Pressed, selector="#machines_reload_button")
     def reload_all(self, event) -> None:
@@ -685,5 +651,5 @@ class ContainerMachines(Container):
                     with Container(id="retired_machines_container"):
                         yield RetiredMachines()
         with Vertical(id="machine_right_pane"):
-            yield Static("Active: [dim]NONE[/]", id="machine_active_status")
+            yield ActiveMachinePanel(id="active_machine_panel")
             yield MachineDetails(id="machine_control")

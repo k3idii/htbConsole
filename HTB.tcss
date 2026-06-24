@@ -295,11 +295,70 @@ Header {
         height: 1fr;
         margin: 1 0 1 1;
 
-        #machine_active_status {
+        #active_machine_panel {
             height: auto;
-            padding: 0 1;
             background: $background-lighten-1;
+            border: panel $border;
+            border-title-color: $secondary;
+            border-title-style: bold;
+            border-title-align: left;
             color: $color;
+            margin: 0 0 1 0;
+
+            #active_machine_details {
+                height: auto;
+                padding: 0 1;
+            }
+
+            #active_action_row {
+                width: 100%;
+                height: auto;
+
+                Button#active_stop_button,
+                Button#active_reset_button,
+                Button#active_copy_ip_button,
+                Button#active_refresh_button {
+                    width: 1fr;
+                    min-width: 0;
+                    margin: 0 1;
+                }
+            }
+
+            #active_submit_flag_container {
+                width: 100%;
+                height: auto;
+
+                #active_submit_flag_input {
+                    width: 70%;
+                }
+
+                Button#active_submit_flag_button {
+                    min-width: 0;
+                    width: 30%;
+                    margin-right: 1;
+                }
+            }
+
+            Button#active_submit_flag_button {
+                background: $secondary;
+                border-top: tall $secondary-lighten-1;
+                border-bottom: tall $secondary 30%;
+                color: black;
+
+                &:hover {
+                    background: $secondary 90%;
+                }
+            }
+
+            Button#active_stop_button {
+                background: #c6383c;
+                border-top: tall #a6595c;
+                border-bottom: tall #c6383c 30%;
+
+                &:hover {
+                    background: #c6383c 90%;
+                }
+            }
         }
     }
 
@@ -386,40 +445,15 @@ Header {
         #machine_control_buttons {
             dock: bottom;
             height: auto;
+            padding: 0 1;
 
-            #machine_action_row {
+            Button#spawn_machine_button {
                 width: 100%;
-                height: auto;
-
-                Button#spawn_machine_button,
-                Button#stop_machine_button,
-                Button#reset_machine_button,
-                Button#copy_ip_button,
-                Button#refresh_machine_button {
-                    width: 1fr;
-                    min-width: 0;
-                    margin: 0 1;
-                }
-            }
-
-            #submit_flag_container {
-                width: 100%;
-                height: auto;
-
-                #submit_flag_input {
-                    width: 70%;
-                }
-
-                Button#submit_flag_button {
-                    min-width: 0;
-                    width: 30%;
-                    margin-right: 1;
-                }
+                min-width: 0;
             }
         }
 
-        Button#spawn_machine_button,
-        Button#submit_flag_button {
+        Button#spawn_machine_button {
             background: $secondary;
             border-top: tall $secondary-lighten-1;
             border-bottom: tall $secondary 30%;
@@ -427,16 +461,6 @@ Header {
 
             &:hover {
                 background: $secondary 90%;
-            }
-        }
-
-        Button#stop_machine_button {
-            background: #c6383c;
-            border-top: tall #a6595c;
-            border-bottom: tall #c6383c 30%;
-
-            &:hover {
-                background: #c6383c 90%;
             }
         }
     }
