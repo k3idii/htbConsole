@@ -7,6 +7,12 @@ __pycache__/
 # Virtual env
 .venv/
 
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
 # Tokens / secrets
 token.txt
 token*.txt

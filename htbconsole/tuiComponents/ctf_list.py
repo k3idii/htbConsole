@@ -11,7 +11,7 @@ from textual.containers import Container, Horizontal
 
 from rich.table import Table
 
-from tuiComponents.messages import ErrorMsg, EventMsg
+from .messages import ErrorMsg, EventMsg
 
 
 class JoinCTFScreen(ModalScreen):

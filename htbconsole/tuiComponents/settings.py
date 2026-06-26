@@ -6,7 +6,7 @@ from textual.app import ComposeResult
 from rich.table import Table
 
 from .messages import DebugMsg, EventMsg, ErrorMsg
-from appSettings import DEFAULT_CUSTOM_ACTIONS
+from ..appSettings import DEFAULT_CUSTOM_ACTIONS
 
 
 class ContainerSettings(VerticalScroll):
@@ -148,7 +148,7 @@ class ContainerSettings(VerticalScroll):
     async def toggle_burp(self, event: Switch.Changed):
         import os
         import httpx
-        import httpApi
+        from .. import httpApi
         addr = self.query_one("#settings_burp_input", Input).value.strip()
         if event.value and addr:
             self.app.settings.burp_proxy = addr

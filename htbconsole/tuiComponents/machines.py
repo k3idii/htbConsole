@@ -7,7 +7,7 @@ from textual.widgets import DataTable, Static, Button, Sparkline, Label, Markdow
 from textual.containers import Container, Horizontal, Vertical
 from textual.app import ComposeResult
 
-from httpApi import HTBApiSession
+from ..httpApi import HTBApiSession
 from .messages import DebugMsg, ErrorMsg, EventMsg
 from .notes_editor import NotesEditor
 from .confirm_dir import ensure_task_dir

@@ -2,8 +2,8 @@ from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.widgets import DataTable, Static, Markdown
 
-from httpApi import HTBApiSession
-from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg
+from ..httpApi import HTBApiSession
+from .messages import DebugMsg, ErrorMsg, EventMsg
 
 
 RANK_MAP  = {

@@ -8,17 +8,17 @@ from textual.containers import Container
 from textual.widgets import Footer, Header
 
 
-from tuiComponents.machines import ContainerMachines
-from tuiComponents.challs import ContainerChallenges
-from tuiComponents.sherlocks import ContainerSherlocks
-from tuiComponents.player import ContainerPlayerInfo
-from tuiComponents.settings import ContainerSettings
-from tuiComponents.token_screen import TokenInputScreen
-from tuiComponents.log_screen import LogScreen
+from .tuiComponents.machines import ContainerMachines
+from .tuiComponents.challs import ContainerChallenges
+from .tuiComponents.sherlocks import ContainerSherlocks
+from .tuiComponents.player import ContainerPlayerInfo
+from .tuiComponents.settings import ContainerSettings
+from .tuiComponents.token_screen import TokenInputScreen
+from .tuiComponents.log_screen import LogScreen
 
-from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg, SelfFormattingMsg
-from httpApi import HTBApiSession
-from appSettings import HTBSettings
+from .tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg, SelfFormattingMsg
+from .httpApi import HTBApiSession
+from .appSettings import HTBSettings
 
 
 class HackTheApp(App):

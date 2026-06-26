@@ -12,10 +12,10 @@ from textual.containers import Container, VerticalScroll, Horizontal
 
 from rich.table import Table
 
-from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg
-from tuiComponents.downloader import execute_unpack
-from tuiComponents.notes_editor import NotesEditor
-from tuiComponents.confirm_dir import ensure_task_dir
+from .messages import DebugMsg, ErrorMsg, EventMsg
+from .downloader import execute_unpack
+from .notes_editor import NotesEditor
+from .confirm_dir import ensure_task_dir
 
 
 CATEGORY_NAMES = {

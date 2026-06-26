@@ -3,8 +3,32 @@ from dataclasses import dataclass, field, asdict
 import yaml
 
 
-SETTINGS_FILE = "./htbSettings.yaml"
+_APP_NAME = "htbconsole"
+_SETTINGS_BASENAME = "htbSettings.yaml"
 YAML_KEY = None
+
+
+def settings_path():
+    """Resolve the settings file location.
+
+    Priority:
+      1. ``HTB_SETTINGS`` env var (explicit override)
+      2. ``./htbSettings.yaml`` in the current dir, if it already exists (back-compat)
+      3. XDG user config: ``$XDG_CONFIG_HOME/htbconsole/htbSettings.yaml``
+         (falls back to ``~/.config/htbconsole/``)
+    """
+    override = os.environ.get("HTB_SETTINGS")
+    if override:
+        return os.path.expanduser(override)
+
+    cwd_file = os.path.join(os.getcwd(), _SETTINGS_BASENAME)
+    if os.path.exists(cwd_file):
+        return cwd_file
+
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    cfg_dir = os.path.join(base, _APP_NAME)
+    os.makedirs(cfg_dir, exist_ok=True)
+    return os.path.join(cfg_dir, _SETTINGS_BASENAME)
 
 DEFAULT_CUSTOM_ACTIONS = """\
 {% if play_info.status == 'ready' %}
@@ -75,12 +99,13 @@ class CTFSettings(BaseSettings):
 
 
 def _load_yaml():
-    if not os.path.exists(SETTINGS_FILE):
+    path = settings_path()
+    if not os.path.exists(path):
         return {}
-    with open(SETTINGS_FILE, "r") as f:
+    with open(path, "r") as f:
         return yaml.safe_load(f) or {}
 
 
 def _save_yaml(data):
-    with open(SETTINGS_FILE, "w") as f:
+    with open(settings_path(), "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)

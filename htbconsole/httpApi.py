@@ -5,7 +5,7 @@ import os
 import warnings
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
-from tuiComponents.messages import DebugMsg, EventMsg
+from .tuiComponents.messages import DebugMsg, EventMsg
 
 
 class TokenExpiredError(Exception):

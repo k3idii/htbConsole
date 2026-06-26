@@ -21,7 +21,7 @@ def main():
             mode = "ctf"
         else:
             print(f"Unknown mode: {arg}")
-            print("Usage: htbConsole.py [htb|ctf]")
+            print("Usage: htbconsole [htb|ctf]")
             sys.exit(1)
     else:
         choice = prompt()
@@ -34,10 +34,10 @@ def main():
             sys.exit(1)
 
     if mode == "htb":
-        from tuiHTB import main as htb_main
+        from .tuiHTB import main as htb_main
         htb_main()
     else:
-        from tuiCTF import main as ctf_main
+        from .tuiCTF import main as ctf_main
         ctf_main()
 
 

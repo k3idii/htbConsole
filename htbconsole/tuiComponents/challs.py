@@ -6,7 +6,7 @@ import re
 import os
 
 from textual.widgets import DataTable
-from httpApi import HTBApiSession
+from ..httpApi import HTBApiSession
 from textual.widgets import Button, Sparkline, Label, DirectoryTree, Input, Select, Markdown, TabbedContent, TabPane
 
 from textual.screen import ModalScreen

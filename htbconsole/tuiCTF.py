@@ -6,13 +6,13 @@ from textual.app import App, ComposeResult
 from textual.widgets import RichLog, Footer, Header
 from textual.containers import Container
 
-from tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg, SelfFormattingMsg
-from tuiComponents.token_screen import TokenInputScreen
-from tuiComponents.ctf_list import CTFListView
-from tuiComponents.ctf_challs import CTFChallengesView
-from tuiComponents.log_screen import LogScreen
-from httpApi import HTBCTFSession
-from appSettings import CTFSettings
+from .tuiComponents.messages import DebugMsg, ErrorMsg, EventMsg, SelfFormattingMsg
+from .tuiComponents.token_screen import TokenInputScreen
+from .tuiComponents.ctf_list import CTFListView
+from .tuiComponents.ctf_challs import CTFChallengesView
+from .tuiComponents.log_screen import LogScreen
+from .httpApi import HTBCTFSession
+from .appSettings import CTFSettings
 
 
 class CTFApp(App):

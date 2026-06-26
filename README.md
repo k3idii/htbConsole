@@ -31,12 +31,24 @@ Inspired by [HTBtui](https://github.com/its-sarin/HTBtui).
 - **Workspace Management** — auto-create directory trees per CTF (`{workdir}/CTF_{date}__{id}/{category}/{taskid}__{name}`)
 
 
-## Setup
+## Install
+
+```bash
+# From PyPI (once published)
+pip install htbconsole
+
+# From source
+git clone https://github.com/keidii/htbconsole
+cd htbconsole
+pip install .
+```
+
+### Development (editable, run in place)
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .       # or: pip install -r requirements.txt
 ```
 
 
@@ -61,18 +73,23 @@ Optional environment variables:
 | `CTF_TOKEN` | — | CTF platform API token |
 | `HTB_WORKDIR` | `./work` | Directory for downloads, notes, and task files |
 | `USE_BURP` | — | Proxy address for Burp (e.g. `http://127.0.0.1:8080`) |
+| `HTB_SETTINGS` | — | Explicit path to the settings YAML file |
+
+Settings file resolution order: `HTB_SETTINGS` → `./htbSettings.yaml` if it already exists (back-compat) → `$XDG_CONFIG_HOME/htbconsole/htbSettings.yaml` (default `~/.config/htbconsole/htbSettings.yaml`).
 
 ## Usage
 
 ```bash
-# Launcher (interactive or with argument)
-python htbConsole.py          # prompts: [h]tb or [c]tf ?
-python htbConsole.py htb      # launch HTB platform TUI
-python htbConsole.py ctf      # launch CTF platform TUI
+# Installed console commands
+htbconsole            # prompts: [h]tb or [c]tf ?
+htbconsole htb        # launch HTB platform TUI
+htbconsole ctf        # launch CTF platform TUI
+tui-htb               # launch HTB platform TUI directly
+tui-ctf               # launch CTF platform TUI directly
 
-# Direct
-python tuiHTB.py
-python tuiCTF.py
+# Standalone (no install needed, from repo root)
+python -m htbconsole [htb|ctf]
+python htbConsole.py [htb|ctf]
 ```
 
 ## Keybindings
