@@ -9,10 +9,10 @@ Inspired by [HTBtui](https://github.com/its-sarin/HTBtui).
 ## Screenshots
 
 ### HTB Platform
-![HTB Platform](screens/htbmain.png)
+![HTB Platform](https://raw.githubusercontent.com/k3idii/htbConsole/main/screens/htbmain.png)
 
 ### CTF Platform
-![CTF Platform](screens/ctfmain.png)
+![CTF Platform](https://raw.githubusercontent.com/k3idii/htbConsole/main/screens/ctfmain.png)
 
 ## Features
 
@@ -38,8 +38,8 @@ Inspired by [HTBtui](https://github.com/its-sarin/HTBtui).
 pip install htbconsole
 
 # From source
-git clone https://github.com/keidii/htbconsole
-cd htbconsole
+git clone https://github.com/k3idii/htbConsole
+cd htbConsole
 pip install .
 ```
 

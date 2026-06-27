@@ -29,6 +29,8 @@ _tmp/
 changes.md
 .*/
 DOCS/
+PUBLISHING.md
+
 
 #local config 
 *.yaml
