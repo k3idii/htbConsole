@@ -28,6 +28,7 @@ local/
 _tmp/
 changes.md
 .*/
+!.github/
 DOCS/
 PUBLISHING.md
 
