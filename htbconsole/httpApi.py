@@ -142,7 +142,7 @@ class HTBApiSession:
     if self.USE_CACHE and cache_this and self.is_in_cache(req_id):
       data = self.get_from_cache(req_id)
       self.app.post_message(DebugMsg(
-        f"API::CACHED {method}", str(data)[:20]+ "... ... "
+        f"API::CACHED {method}", str(data)
       ))
       return data
     
@@ -167,7 +167,7 @@ class HTBApiSession:
       raise Exception(f"Request {method} to {URL} fail with {response.status_code}: {body}")
     data = response.json()
     self.app.post_message(DebugMsg(
-      f"API::RESULT {method}", response, str(data)[:20]+ "... ... "
+      f"API::RESULT {method}", response, str(data) 
     ))
     if self.USE_CACHE and cache_this:
       self.save_to_cache(req_id, data)

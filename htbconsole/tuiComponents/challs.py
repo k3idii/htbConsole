@@ -131,6 +131,13 @@ chall_difficulty_map = {
   "Insane": "#ffccff"
 }
 
+# (label shown in dropdown, value sent as ?state=)
+chall_state_options = [
+  ("Retired",        "retired"),
+  ("Active",         "active"),
+  ("Retired (free)", "retired_free"),
+]
+
 pattern1 = re.compile('[^0-9a-zA-Z_]+')
 
 def make_dirname(chall, workdir):
@@ -513,11 +520,13 @@ class ChallFilterThing:
   name = None
   difficulty = None
   category = None
+  state = None
   def __init__(self):
     self.name = ''
     self.difficulty = []
     self.category = []
-  
+    self.state = ''
+
   def sterialize(self):
     val = []
     if self.name:
@@ -526,14 +535,18 @@ class ChallFilterThing:
       val.append( ("difficulty[]" , item.lower() ) )
     for item in self.category:
       val.append( ("category[]"   , str(item)))
+    if self.state:
+      val.append( ("state", self.state) )
     return val
-  
+
   def describe(self, categories_map=None):
     parts = []
     if self.name:
       parts.append(f'"{self.name}"')
     if self.difficulty:
       parts.append(", ".join(self.difficulty))
+    if self.state:
+      parts.append(self.state)
     if self.category and categories_map:
       names = [categories_map.get(c, str(c)) for c in self.category]
       parts.append(", ".join(names))
@@ -571,11 +584,17 @@ class ChallFilterScreen(ModalScreen):
         id="chall_caltegory_selection", 
         prompt="Select Category")
       
-      dif_list =  chall_difficulty_map.keys() 
+      dif_list =  chall_difficulty_map.keys()
       yield Select(
         ( (key , key) for key in dif_list),
-        id="chall_difficulty_selection", 
+        id="chall_difficulty_selection",
         prompt="Select Difficulty"
+      )
+
+      yield Select(
+        ( (label, val) for label, val in chall_state_options ),
+        id="chall_state_selection",
+        prompt="Select State"
       )
       yield Button("Close")
   
@@ -598,6 +617,12 @@ class ChallFilterScreen(ModalScreen):
     """Handle difficulty selection change."""
     self.filtering.difficulty = [event.value] if event.value != Select.BLANK else []
     self.app.post_message(DebugMsg(f"ChallFilter::Difficulty changed", event, str(self.filtering)))
+
+  @on(Select.Changed, "#chall_state_selection")
+  def state_changed(self, event: Select.Changed) -> None:
+    """Handle state selection change."""
+    self.filtering.state = event.value if event.value != Select.BLANK else ''
+    self.app.post_message(DebugMsg(f"ChallFilter::State changed", event, str(self.filtering)))
   
   
   

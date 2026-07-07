@@ -34,6 +34,7 @@ def _parse_machine(machine):
         "id": machine["id"],
         "os": machine["os"],
         "difficulty": machine.get("difficultyText", "Unknown"),
+        "info_status": machine.get("info_status", ""),
         "user_owned": machine.get("authUserInUserOwns", False),
         "root_owned": machine.get("authUserInRootOwns", False),
         "points": machine.get("points", 0),
@@ -45,6 +46,35 @@ def _parse_machine(machine):
         "is_competitive": machine.get("is_competitive", False),
         "user_owns_count": machine.get("user_owns_count", 0),
         "root_owns_count": machine.get("root_owns_count", 0),
+    }
+
+
+def _parse_profile(info):
+    """Parse the richer /api/v4/machine/profile/{name} `info` object.
+
+    Field names differ slightly from the paginated list (e.g. `stars` vs `star`);
+    values are overlaid onto the list-row data when non-None.
+    """
+    return {
+        "name": info.get("name"),
+        "id": info.get("id"),
+        "os": info.get("os"),
+        "difficulty": info.get("difficultyText"),
+        "info_status": info.get("info_status", ""),
+        "synopsis": info.get("synopsis") or "",
+        "maker": (info.get("maker") or {}).get("name"),
+        "maker2": (info.get("maker2") or {}).get("name"),
+        "user_owned": info.get("authUserInUserOwns"),
+        "root_owned": info.get("authUserInRootOwns"),
+        "points": info.get("points"),
+        "rating": info.get("stars"),
+        "release": info.get("release"),
+        "user_owns_count": info.get("user_owns_count"),
+        "root_owns_count": info.get("root_owns_count"),
+        "feedbackForChart": info.get("feedbackForChart"),
+        "ip": info.get("ip"),
+        "active": info.get("active"),
+        "retired": info.get("retired"),
     }
 
 
@@ -301,6 +331,29 @@ class MachineDetails(Static):
         workdir = self.app.settings.workdir
         self._task_dir = _machine_dir(name, workdir)
         ensure_task_dir(self.app, self._task_dir, self._on_dir_ready)
+        # fetch full profile (info_status, maker, synopsis, fresh play info, ...)
+        self.run_worker(self._fetch_profile(machine_id, name))
+
+    async def _fetch_profile(self, machine_id, name) -> None:
+        try:
+            data = await self.app.API.async_get(
+                f"/api/v4/machine/profile/{name}", cache_this=0)
+        except Exception as e:
+            self.app.post_message(ErrorMsg(e))
+            return
+        # user may have selected a different machine while this was in flight
+        if self.selected_machine_id != machine_id:
+            return
+        info = (data or {}).get("info")
+        if not info:
+            return
+        merged = dict(self.selected_machine_data)
+        for k, v in _parse_profile(info).items():
+            if v is not None:
+                merged[k] = v
+        self.selected_machine_data = merged
+        self.query_one("#machine_details", Markdown).update(self.make_machine_details())
+        self.app.post_message(EventMsg(f"[+] Loaded machine profile: {name}"))
 
     def _on_dir_ready(self, path):
         if path is None:
@@ -349,10 +402,17 @@ class MachineDetails(Static):
         user_flag = "User Flag : ✅" if d.get('user_owned') else "User Flag : ❌"
         root_flag = "Root Flag : ✅" if d.get('root_owned') else "Root Flag : ❌"
         release_date = _format_release(d.get("release", ""), "%B %d, %Y")
+        info_status = d.get('info_status', '').replace('\r', '').strip()
+        makers = " & ".join(m for m in (d.get('maker'), d.get('maker2')) if m)
+        synopsis = d.get('synopsis', '')
 
         lines = [
             f"**OS** : {d.get('os', '?')}  ",
             f"**Difficulty** : {diff}  ",
+        ]
+        if makers:
+            lines.append(f"**Maker** : {makers}  ")
+        lines += [
             f"{user_flag}  ",
             f"{root_flag}  ",
             f"**Points** : {d.get('points', 0)}  ",
@@ -361,6 +421,10 @@ class MachineDetails(Static):
             f"**Root Owns** : {d.get('root_owns_count', 0)}  ",
             f"**Release** : {release_date}  ",
         ]
+        if info_status:
+            lines.append(f"\n**Info Status** : {info_status}  ")
+        if synopsis:
+            lines.append(f"\n**Synopsis** : {synopsis}  ")
         self.make_feedback_sparkline()
         return "\n".join(lines)
 
