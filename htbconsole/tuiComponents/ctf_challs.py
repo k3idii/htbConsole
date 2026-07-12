@@ -150,7 +150,7 @@ class CTFChallengesView(Container):
 
     async def _load_ctf(self, ctf_data):
         try:
-            detail = await self.app.CTF_API.get(f"/api/ctfs/{ctf_data['id']}")
+            detail = await self.app.CTF_API.api_ctf_info(ctf_data['id'])
             self.app._current_ctf = detail
             challenges = detail.get('challenges', [])
             self.app._ctf_challenges = {c['id']: c for c in challenges}
@@ -237,7 +237,7 @@ class CTFChallengesView(Container):
 
     async def _load_scoreboard(self, ctf_id, my_team):
         try:
-            data = await self.app.CTF_API.get(f"/api/ctfs/scores/{ctf_id}")
+            data = await self.app.CTF_API.api_ctf_scores(ctf_id)
             scores = data.get('scores', [])
 
             sb_info = Table.grid(expand=True)
@@ -416,9 +416,7 @@ class CTFChallengesView(Container):
             os.makedirs(tdir, exist_ok=True)
             out_file = os.path.join(tdir, filename)
 
-            data = await self.app.CTF_API.download_bytes(
-                f"/api/challenges/{chall_id}/download"
-            )
+            data = await self.app.CTF_API.api_ctf_download(chall_id)
             with open(out_file, "wb") as f:
                 f.write(data)
             result = f"Saved {len(data)} bytes to {out_file}"

@@ -168,9 +168,7 @@ class PastCTFTable(CTFTable):
 
     async def _do_load(self):
         try:
-            data = await self.app.CTF_API.get(
-                f"/api/ctfs/past?page={self._current_page}&search="
-            )
+            data = await self.app.CTF_API.api_ctf_past(params={"page": self._current_page, "search": ""})
             ctfs = data.get("data", data) if isinstance(data, dict) else data
             meta = data.get("meta", {}) if isinstance(data, dict) else {}
             if meta:
@@ -223,7 +221,7 @@ class CTFListView(Container):
 
     async def _load(self):
         try:
-            ctfs = await self.app.CTF_API.get("/api/ctfs")
+            ctfs = await self.app.CTF_API.api_ctf_list()
             self.app._ctf_cache = {c['id']: c for c in ctfs}
 
             ongoing = [c for c in ctfs if c.get('status') == 'Ongoing']

@@ -103,7 +103,7 @@ class ChallengeCategories:
     self.name_to_id = {}
 
   async def load(self, api_session):
-    data = await api_session.async_get("/api/v4/challenge/categories/list")
+    data = await api_session.api_htb_chal_categories()
     for cat in data.get("info", []):
       cat_id = cat.get("id")
       cat_name = cat.get("name")
@@ -200,7 +200,7 @@ class ChallDetails(Container):
  
   async def do_download(self):
     id = self.CURRENT_ID
-    data = await self.app.API.async_get(f"/api/v4/challenges/{id}/download_link", cache_this=0)
+    data = await self.app.API.api_htb_chal_download_link(id, cache_this=0)
     url = data['url']
     self.app.post_message(EventMsg(f"Download started: {self.chall_data.get('name', id)}"))
     self.app.notify("Downloading...", timeout=3)
@@ -225,10 +225,7 @@ class ChallDetails(Container):
            
   async def do_start_box(self):
     self.app.post_message(EventMsg(f"Challenge::START {self.CURRENT_ID}"))
-    rsp = await self.app.API.async_post(
-      "/api/v4/container/start",
-      {"containerable_id": self.CURRENT_ID}
-    )
+    rsp = await self.app.API.api_htb_chal_start(self.CURRENT_ID)
     return rsp
     
     # POST https://labs.hackthebox.com/api/v4/container/start
@@ -237,10 +234,7 @@ class ChallDetails(Container):
   
   async def do_stop_box(self):
     self.app.post_message(EventMsg(f"Challenge::STOP {self.CURRENT_ID}"))
-    rsp = await self.app.API.async_post(
-      "/api/v4/container/stop",
-      {"containerable_id": self.CURRENT_ID}
-    )
+    rsp = await self.app.API.api_htb_chal_stop(self.CURRENT_ID)
     return rsp
     # https://labs.hackthebox.com/api/v4/container/stop
     # <- {"containerable_id":1054}
@@ -261,10 +255,7 @@ class ChallDetails(Container):
     if len(flag)<2:
       return 0
     try:
-      resp = await self.app.API.async_post(
-        f"/api/v4/challenge/own",
-        {"challenge_id": self.CURRENT_ID, "flag":flag}
-      )
+      resp = await self.app.API.api_htb_chal_submit(self.CURRENT_ID, flag)
       self.app.post_message(DebugMsg("Challenge::submit", flag, resp))
       msg = resp.get("message", "")
       self.app.query_one("#chall_submit_flag_input").value = ''
@@ -295,7 +286,7 @@ class ChallDetails(Container):
       return
     self.app.post_message(EventMsg(f"ChallDetails::Reloading chall {self.CURRENT_ID} details..."))
     try:
-      data = await self.app.API.async_get(f"/api/v4/challenge/info/{self.CURRENT_ID}", cache_this=0)
+      data = await self.app.API.api_htb_chal_info(self.CURRENT_ID, cache_this=0)
       data = data['challenge']
       self.chall_data = data
       workdir = self.app.settings.workdir
@@ -401,7 +392,7 @@ class ChallDetails(Container):
       md.update("*Select a challenge first*")
       return
     try:
-      data = await self.app.API.async_get(f"/api/v4/challenge/{self.CURRENT_ID}/writeup", cache_this=0)
+      data = await self.app.API.api_htb_chal_writeup(self.CURRENT_ID, cache_this=0)
       writeups = data.get("data", [])
       if not writeups:
         md.update("*No community writeups available.*")
@@ -425,7 +416,7 @@ class ChallDetails(Container):
     if not self.CURRENT_ID:
       return
     try:
-      data = await self.app.API.async_get(f"/api/v4/challenge/{self.CURRENT_ID}/writeup/official", cache_this=0)
+      data = await self.app.API.api_htb_chal_writeup_official(self.CURRENT_ID, cache_this=0)
       url = data.get("url")
       if url:
         self.app.post_message(EventMsg(f"Official writeup: {url}"))
@@ -678,8 +669,7 @@ class ChallListTable(DataTable):
     filter_params.append(("per_page", str(self.PER_PAGE)))
     filter_params.append(("page", str(self.current_page)))
 
-    data = await self.app.API.async_get(
-      "/api/v4/challenges", params=filter_params, cache_this=0)
+    data = await self.app.API.api_htb_chal_list(params=filter_params, cache_this=0)
 
     meta = data.get("meta", {})
     self.current_page = meta.get("current_page", 1)
@@ -706,7 +696,7 @@ class ChallListTable(DataTable):
 
   async def _do_load(self):
     try:
-      await self.app.API.ensure_init()
+      await self.app.ensure_init()
       items = await self._fetch_page()
       self._remove_sentinel()
       self._append_rows(items)

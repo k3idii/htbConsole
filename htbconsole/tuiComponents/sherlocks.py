@@ -155,7 +155,7 @@ class SherlockDetails(Container):
             return
         try:
             try:
-                profile = await self.app.API.async_get(f"/api/v4/sherlocks/{self.CURRENT_ID}", cache_this=0)
+                profile = await self.app.API.api_htb_sherlock_get(self.CURRENT_ID, cache_this=0)
                 self.sherlock_data = profile.get("data", {})
             except Exception as e:
                 self.sherlock_data = {}
@@ -170,7 +170,7 @@ class SherlockDetails(Container):
 
             description = ""
             try:
-                info = await self.app.API.async_get(f"/api/v4/sherlocks/{self.CURRENT_ID}/info", cache_this=0)
+                info = await self.app.API.api_htb_sherlock_info(self.CURRENT_ID, cache_this=0)
                 info_data = info.get("data", info)
                 description = info_data.get("description", "") if isinstance(info_data, dict) else ""
             except Exception as e:
@@ -181,7 +181,7 @@ class SherlockDetails(Container):
 
             self.tasks_data = []
             try:
-                tasks = await self.app.API.async_get(f"/api/v4/sherlocks/{self.CURRENT_ID}/tasks", cache_this=0)
+                tasks = await self.app.API.api_htb_sherlock_tasks(self.CURRENT_ID, cache_this=0)
                 self.tasks_data = tasks.get("data", [])
             except Exception:
                 pass
@@ -297,10 +297,7 @@ class SherlockDetails(Container):
             self.app.notify("Select a task and enter an answer", severity="warning")
             return
         try:
-            resp = await self.app.API.async_post(
-                f"/api/v4/sherlocks/{self.CURRENT_ID}/tasks/{task_id}/flag",
-                {"flag": answer}
-            )
+            resp = await self.app.API.api_htb_sherlock_submit(self.CURRENT_ID, task_id, answer)
             msg = resp.get("message", "")
             self.app.post_message(DebugMsg("Sherlock::Submit", answer, resp))
             if "Incorrect" in msg:
@@ -322,8 +319,7 @@ class SherlockDetails(Container):
         if not self.CURRENT_ID or not self.sherlock_data:
             return
         try:
-            data = await self.app.API.async_get(
-                f"/api/v4/sherlocks/{self.CURRENT_ID}/download_link", cache_this=0)
+            data = await self.app.API.api_htb_sherlock_download_link(self.CURRENT_ID, cache_this=0)
             url = data.get("url")
             if not url:
                 self.app.notify("No download available", severity="warning")
@@ -419,13 +415,12 @@ class SherlockListTable(DataTable):
 
     async def _do_load(self):
         try:
-            await self.app.API.ensure_init()
+            await self.app.ensure_init()
             params = []
             params += self.filtering.serialize()
             params.append(("per_page", str(self.PER_PAGE)))
             params.append(("page", str(self.current_page)))
-            data = await self.app.API.async_get(
-                "/api/v4/sherlocks", params=params, cache_this=0)
+            data = await self.app.API.api_htb_sherlock_list(params=params, cache_this=0)
 
             meta = data.get("meta", {})
             self.current_page = meta.get("current_page", 1)

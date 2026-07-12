@@ -41,6 +41,8 @@ class PlayerActivity(Static):
         self._displayed = 0
         self._seen_keys = set()
 
+
+
     def compose(self) -> ComposeResult:
         dt = DataTable(id="player_activity_table")
         dt.show_header = True
@@ -58,16 +60,15 @@ class PlayerActivity(Static):
         self.run_worker(self._load_activity())
 
     def _activity_key(self, a):
-        return f"{a.get('date','')}__{a.get('id','')}__{a.get('type','')}"
+        return f"{a.get('id','')}__{a.get('type','')}"
 
     async def _load_activity(self):
         try:
-            await self.app.API.ensure_init()
-            uid = self.get_api().CRRENT_USER['info']['id']
+            uid = self.app.CURRENT_USER['info']['id']
             self.user_data["id"] = uid
 
-            data = await self.get_api().async_get(f"/api/v4/profile/activity/{uid}")
-            new_activities = data["profile"]["activity"]
+            data = await self.get_api().api_htb_profile_activity(uid)
+            new_activities = data['data']
 
             new_count = 0
             for a in new_activities:
@@ -78,6 +79,8 @@ class PlayerActivity(Static):
 
             if new_count == 0 and self.activity_data:
                 return
+
+            self.app.notify(f"Found {new_count} new activities")
 
             self.activity_data = new_activities
             self._seen_keys = {self._activity_key(a) for a in self.activity_data}
@@ -100,11 +103,17 @@ class PlayerActivity(Static):
         end = min(self._displayed + self.BATCH_SIZE, len(self.activity_data))
         for i in range(self._displayed, end):
             a = self.activity_data[i]
+            if a['type'] == 'challenge':
+                # use name + categoryName:
+                name = f"{a['name']}/{a['categoryName']}"
+            else:
+                name = a['name']
+            
             dt.add_row(
-                f"[b]{a['flag_title']}" if "flag_title" in a else f"[b]{a['type']}",
-                f"[b]{a['name']}[/b]",
+                f"[b]{a['type']}[/b]",
+                f"[b]{name}[/b]",
                 f"[#9fef00]+{a['points']}pts",
-                f"{a['date_diff']}",
+                f"{a['ownDate']}",
             )
         self._displayed = end
 
@@ -155,7 +164,7 @@ class PlayerStats(Static):
 
     async def update_profile(self) -> None:
         try:
-            await self.app.API.ensure_init()
+            await self.app.ensure_init()
             await self._fetch_profile()
             await self._fetch_season()
             status = await self._fetch_status()
@@ -169,9 +178,10 @@ class PlayerStats(Static):
             self.post_message(ErrorMsg(e))
 
     async def _fetch_profile(self):
+        await self.app.ensure_init()
         ses = self.app.get_api()
-        uid = ses.CRRENT_USER['info']['id']
-        data = await ses.async_get(f"/api/v4/profile/{uid}")
+        uid = self.app.CURRENT_USER['info']['id']
+        data = await ses.api_htb_profile(uid)
         p = data['profile']
         self.user_data = {
             "id": p['id'], "name": p['name'], "rank": p['rank_id'],
@@ -183,7 +193,7 @@ class PlayerStats(Static):
         }
 
     async def _fetch_season(self):
-        data = await self.app.get_api().async_get("/api/v4/season/list")
+        data = await self.app.get_api().api_htb_season_list()
         for season in data.get("data", []):
             if season.get("active"):
                 self.current_season = {"id": season["id"], "name": season["name"]}
@@ -191,7 +201,7 @@ class PlayerStats(Static):
 
         if self.current_season["id"] is None:
             return
-        data = await self.app.get_api().async_get(f"/api/v4/season/user/rank/{self.current_season['id']}")
+        data = await self.app.get_api().api_htb_season_user_rank(self.current_season['id'])
         d = data.get("data", {})
         self.season_data["league"] = d.get("league")
         self.season_data["rank"] = d.get("rank")
@@ -205,14 +215,14 @@ class PlayerStats(Static):
     async def _fetch_status(self):
         status = {"machine": "None", "vpn": "Unknown", "workdir": self.app.settings.workdir}
         try:
-            active = await self.app.get_api().async_get("/api/v4/machine/active", cache_this=0)
+            active = await self.app.get_api().api_htb_machine_active(cache_this=0)
             info = active.get("info")
             if info:
                 status["machine"] = f"{info.get('name', '?')} ({info.get('ip', '?')})"
         except Exception:
             pass
         try:
-            conn = await self.app.get_api().async_get("/api/v4/connection/status", cache_this=0)
+            conn = await self.app.get_api().api_htb_connection_status(cache_this=0)
             if conn:
                 lines = []
                 for c in conn:

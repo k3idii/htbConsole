@@ -73,7 +73,7 @@ class ContainerSettings(VerticalScroll):
 
     async def _load_settings(self):
         try:
-            await self.app.API.ensure_init()
+            await self.app.ensure_init()
             s = self.app.settings
 
             self.query_one("#settings_cache_toggle", Switch).value = s.use_cache
@@ -97,8 +97,8 @@ class ContainerSettings(VerticalScroll):
         table.add_column(ratio=1)
         table.add_column(ratio=2)
 
-        user = api.CRRENT_USER.get("info", {})
-        token = api.APITOKEN
+        user = self.app.CURRENT_USER.get("info", {})
+        token = api.token
         masked = token[:10] + "..." + token[-6:] if len(token) > 20 else "***"
 
         table.add_row("Base URL", api.base_url)
@@ -115,7 +115,7 @@ class ContainerSettings(VerticalScroll):
 
     async def _refresh_vpn_info(self):
         try:
-            data = await self.app.API.async_get("/api/v4/connections/servers", cache_this=0)
+            data = await self.app.API.api_htb_connections_servers(cache_this=0)
             table = Table.grid(expand=True)
             table.add_column(ratio=1)
             table.add_column(ratio=2)
@@ -177,8 +177,8 @@ class ContainerSettings(VerticalScroll):
     @on(Button.Pressed, "#settings_refresh_button")
     async def refresh_all(self, event):
         self.app.post_message(EventMsg("Refreshing all data..."))
-        self.app.API._initialized = False
-        await self.app.API.ensure_init()
+        self.app._initialized = False
+        await self.app.ensure_init()
         self._refresh_api_info()
         self.app.post_message(EventMsg("Data refreshed"))
 

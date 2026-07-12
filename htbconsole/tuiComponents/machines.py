@@ -90,7 +90,7 @@ class _PaginatedMachineTable(DataTable):
 
     PER_PAGE = 50
     _MORE_KEY = "__more__"
-    _ENDPOINT = "/api/v4/machine/paginated"
+    _API_METHOD = "api_htb_machine_list"
 
     def get_api(self) -> HTBApiSession:
         return self.app.get_api()
@@ -154,10 +154,9 @@ class _PaginatedMachineTable(DataTable):
 
     async def _do_load(self):
         try:
-            await self.get_api().ensure_init()
-            data = await self.get_api().async_get(
-                f"{self._ENDPOINT}?per_page={self.PER_PAGE}&page={self.current_page}",
-                cache_this=0)
+            await self.app.ensure_init()
+            data = await getattr(self.get_api(), self._API_METHOD)(
+                params={"per_page": self.PER_PAGE, "page": self.current_page}, cache_this=0)
             meta = data.get("meta", {})
             self.current_page = meta.get("current_page", 1)
             self.total_pages = meta.get("last_page", 1)
@@ -197,7 +196,7 @@ class _PaginatedMachineTable(DataTable):
 
 
 class CurrentMachines(_PaginatedMachineTable):
-    _ENDPOINT = "/api/v4/machine/paginated"
+    _API_METHOD = "api_htb_machine_list"
 
     def __init__(self) -> None:
         super().__init__()
@@ -205,7 +204,7 @@ class CurrentMachines(_PaginatedMachineTable):
 
 
 class RetiredMachines(_PaginatedMachineTable):
-    _ENDPOINT = "/api/v4/machine/list/retired/paginated"
+    _API_METHOD = "api_htb_machine_retired"
 
     def __init__(self) -> None:
         super().__init__()
@@ -253,10 +252,10 @@ class SeasonalMachines(DataTable):
 
     async def update_machine_list(self) -> None:
         try:
-            await self.get_api().ensure_init()
+            await self.app.ensure_init()
             self.machine_data = {}
             self.active_ids = set()
-            data = await self.get_api().async_get("/api/v4/machine/paginated?per_page=100")
+            data = await self.get_api().api_htb_machine_list(params={"per_page": 100})
             for machine in data.get("data", []):
                 if not machine.get("is_competitive", False):
                     continue
@@ -289,9 +288,6 @@ class SeasonalMachines(DataTable):
 
 
 class MachineDetails(Static):
-
-    SPAWN_ENDPOINT = "/api/v4/vm/spawn"
-    ARENA_START_ENDPOINT = "/api/v4/arena/start"
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -336,8 +332,7 @@ class MachineDetails(Static):
 
     async def _fetch_profile(self, machine_id, name) -> None:
         try:
-            data = await self.app.API.async_get(
-                f"/api/v4/machine/profile/{name}", cache_this=0)
+            data = await self.app.API.api_htb_machine_profile(name, cache_this=0)
         except Exception as e:
             self.app.post_message(ErrorMsg(e))
             return
@@ -443,12 +438,12 @@ class MachineDetails(Static):
 
     async def start_machine(self, machine_id: int) -> None:
         try:
-            if self._is_competitive():
+            if 0 and self._is_competitive():
                 self.app.post_message(EventMsg(f"[+] Starting arena machine"))
-                data = await self.app.API.async_post(self.ARENA_START_ENDPOINT, {})
+                data = await self.app.API.api_htb_arena_start()
             else:
                 self.app.post_message(EventMsg(f"[+] Starting machine with id: {machine_id}"))
-                data = await self.app.API.async_post(self.SPAWN_ENDPOINT, {"machine_id": machine_id})
+                data = await self.app.API.api_htb_vm_spawn(machine_id)
             if data:
                 self.app.post_message(DebugMsg(f"[!] {data}"))
                 if "message" in data:
@@ -549,16 +544,13 @@ class ActiveMachinePanel(Static):
             self.update_active()
             return
         arena = self._is_competitive()
-        paths = {
-            ("stop", False): "/api/v4/vm/terminate",
-            ("stop", True): "/api/v4/arena/stop",
-            ("reset", False): "/api/v4/vm/reset",
-            ("reset", True): "/api/v4/arena/reset",
-        }
-        payload = {} if arena else {"machine_id": mid}
+        api = self.app.API
         try:
             self.app.post_message(EventMsg(f"[-] {action.title()} active machine {mid}"))
-            data = await self.app.API.async_post(paths[(action, arena)], payload)
+            if action == "stop":
+                data = await (api.api_htb_arena_stop() if arena else api.api_htb_vm_terminate(mid))
+            else:
+                data = await (api.api_htb_arena_reset() if arena else api.api_htb_vm_reset(mid))
             if data and data.get("message"):
                 self.notify(data["message"])
             await self.app.query_one(ContainerMachines).refresh_active()
@@ -588,10 +580,9 @@ class ActiveMachinePanel(Static):
         self.app.notify(f"Submitting flag for machine {mid}...", timeout=3)
         try:
             if self._is_competitive():
-                data = await self.app.API.async_post("/api/v4/arena/own", {"flag": flag})
+                data = await self.app.API.api_htb_arena_submit(flag)
             else:
-                data = await self.app.API.async_post(
-                    "/api/v5/machine/own", {"id": int(mid), "flag": flag})
+                data = await self.app.API.api_htb_machine_submit(mid, flag)
             self.app.post_message(DebugMsg(f"Flag response: {data}"))
             msg = data.get("message", str(data)) if data else "No response"
             if data and data.get("success"):
@@ -635,8 +626,8 @@ class ContainerMachines(Container):
 
     async def _fetch_active_machine(self):
         try:
-            await self.app.API.ensure_init()
-            data = await self.app.API.async_get("/api/v4/machine/active", cache_this=0)
+            await self.app.ensure_init()
+            data = await self.app.API.api_htb_machine_active(cache_this=0)
             info = data.get("info")
             self._apply_active(info)
         except Exception:
@@ -656,7 +647,7 @@ class ContainerMachines(Container):
             for _ in range(36):
                 await asyncio.sleep(5)
                 try:
-                    data = await self.app.API.async_get("/api/v4/machine/active", cache_this=0)
+                    data = await self.app.API.api_htb_machine_active(cache_this=0)
                     info = data.get("info")
                 except Exception:
                     return

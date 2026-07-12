@@ -15,13 +15,16 @@ def main():
 
     if len(sys.argv) > 1:
         arg = sys.argv[1].lower().strip()
+        if arg == "cli":
+            from .cli import main as cli_main
+            sys.exit(cli_main(sys.argv[2:]))
         if arg in ("htb", "h"):
             mode = "htb"
         elif arg in ("ctf", "c"):
             mode = "ctf"
         else:
             print(f"Unknown mode: {arg}")
-            print("Usage: htbconsole [htb|ctf]")
+            print("Usage: htbconsole [htb|ctf|cli]")
             sys.exit(1)
     else:
         choice = prompt()

@@ -58,6 +58,26 @@ class CTFApp(App):
             yield CTFChallengesView(id="ctf_challenges_view")
         yield Footer()
 
+    # --- httpApi log hooks (event / debug / notify) ------------------------
+
+    def api_log_event(self, message):
+        self.post_message(EventMsg(message))
+
+    def api_log_debug(self, message, *args, **kwargs):
+        self.post_message(DebugMsg(message, *args, **kwargs))
+
+    def api_notify(self, message, severity="information", timeout=5):
+        self.notify(message, severity=severity, timeout=timeout)
+
+    def create_session(self, token) -> HTBCTFSession:
+        """Build an HTBCTFSession bound to this app's log hooks + workdir cache."""
+        workdir = getattr(getattr(self, "settings", None), "workdir", ".")
+        session = HTBCTFSession(token, cache_file=os.path.join(workdir, "ctf_cach.json"))
+        session._handle_log_event = self.api_log_event
+        session._handle_log_debug = self.api_log_debug
+        session._handle_notify = self.api_notify
+        return session
+
     @on(DebugMsg)
     @on(EventMsg)
     @on(ErrorMsg)
@@ -78,7 +98,7 @@ class CTFApp(App):
 
     async def _validate_token(self):
         try:
-            await self.CTF_API.get("/api/ctfs")
+            await self.CTF_API.async_get("/api/ctfs")
             self.post_message(EventMsg("CTF token valid"))
         except Exception:
             self.push_screen(
@@ -94,7 +114,7 @@ class CTFApp(App):
         if not token:
             self.exit()
             return
-        self.CTF_API = HTBCTFSession(token, self)
+        self.CTF_API = self.create_session(token)
         self.post_message(EventMsg("New CTF token set — validating..."))
         self.run_worker(self._validate_token())
 
@@ -115,7 +135,7 @@ def main():
     token = os.getenv("CTF_TOKEN", "")
     app = CTFApp()
     app.settings = CTFSettings.load()
-    app.CTF_API = HTBCTFSession(token, app)
+    app.CTF_API = app.create_session(token)
     app.run()
 
 

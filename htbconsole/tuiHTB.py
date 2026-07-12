@@ -1,4 +1,5 @@
 import os
+import asyncio
 
 from textual import on
 from textual.binding import Binding
@@ -26,6 +27,7 @@ class HackTheApp(App):
 
   ALLOW_SELECT = True  
   CSS_PATH = "HTB.tcss"
+  CURRENT_USER = None
 
   BINDINGS = [
     Binding("q", "quit", "Quit the app", show=True),
@@ -42,6 +44,26 @@ class HackTheApp(App):
     self._log_visible = False
     self.active_machine_id = None
     self.active_machine_info = None
+
+    # init gate: held until the token is validated (see ensure_init / on_ready)
+    self._init_lock = asyncio.Lock()
+    self._initialized = False
+    self._prompting = False
+
+    token = os.getenv("HTB_TOKEN", "")
+    self.settings = HTBSettings.load()
+    self.API = self.create_session(token)
+  
+  
+  def create_session(self, token) -> HTBApiSession:
+    """Build an HTBApiSession bound to this app's log hooks + workdir cache."""
+    workdir = getattr(self.settings , "workdir", "./")
+    session = HTBApiSession(token, cache_file=os.path.join(workdir, "htb_cache.json"))
+    session._handle_log_event = self.api_log_event
+    session._handle_log_debug = self.api_log_debug
+    session._handle_notify = self.api_notify
+    return session
+
 
   def action_logs(self):
     if isinstance(self.screen, LogScreen):
@@ -68,6 +90,17 @@ class HackTheApp(App):
           with TabPane(title, id=f"tab__{id}"):
             yield widget(id=f'cont__{id}')
     yield Footer()
+
+  # --- httpApi log hooks (event / debug / notify) ---------------------------
+
+  def api_log_event(self, message):
+    self.post_message(EventMsg(message))
+
+  def api_log_debug(self, message, *args, **kwargs):
+    self.post_message(DebugMsg(message, *args, **kwargs))
+
+  def api_notify(self, message, severity="information", timeout=5):
+    self.notify(message, severity=severity, timeout=timeout)
 
   @on(DebugMsg)
   @on(EventMsg)
@@ -107,38 +140,55 @@ class HackTheApp(App):
     self.settings = HTBSettings.load()
     os.makedirs(self.settings.workdir, exist_ok=True)
     self.post_message(EventMsg(f"App is ready (workdir: {os.path.abspath(self.settings.workdir)})"))
-    self.run_worker(self._validate_token())
+    self.run_worker(self.ensure_init())
 
-  async def _validate_token(self):
+  async def ensure_init(self):
+    """Block callers until the token is validated.
+
+    The init lock is held while validating and released once done, so any widget
+    awaiting ``ensure_init`` proceeds only after on_ready has a valid token.
+    """
+    async with self._init_lock:
+      if self._initialized:
+        return
+      self._initialized = await self._validate_token()
+
+  async def _validate_token(self) -> bool:
     try:
-      await self.API.ensure_init()
-      name = self.API.CRRENT_USER.get("info", {}).get("name", "?")
+      result = await self.API.async_get("/api/v4/user/info")
+      name = result['info']['name']
+      if name is None:
+        raise ValueError(f"user info is not returned -> token is invalid : {result}")
+      self.CURRENT_USER = result
       self.post_message(EventMsg(f"Token valid — logged in as {name}"))
-    except Exception:
-      self.call_from_thread(
-        self.push_screen,
-        TokenInputScreen(
-          title="HTB Token Required",
-          message="Token is missing or invalid.",
-          token_env="HTB_TOKEN",
-        ),
-        self._on_token_input,
-      ) if not self.is_running else self.push_screen(
-        TokenInputScreen(
-          title="HTB Token Required",
-          message="Token is missing or invalid.",
-          token_env="HTB_TOKEN",
-        ),
-        self._on_token_input,
-      )
+      return True
+    except Exception as ex:
+      self._prompt_for_token(ex)
+      return False
+
+  def _prompt_for_token(self, ex):
+    if self._prompting:
+      return
+    self._prompting = True
+    screen = TokenInputScreen(
+      title="HTB Token Required",
+      message=f"Token is missing or invalid :{ex}",
+      token_env="HTB_TOKEN",
+    )
+    if not self.is_running:
+      self.call_from_thread(self.push_screen, screen, self._on_token_input)
+    else:
+      self.push_screen(screen, self._on_token_input)
 
   def _on_token_input(self, token):
+    self._prompting = False
     if not token:
       self.exit()
       return
-    self.API = HTBApiSession(token, self)
+    self.API = self.create_session(token)
+    self._initialized = False
     self.post_message(EventMsg("New token set — validating..."))
-    self.run_worker(self._validate_token())
+    self.run_worker(self.ensure_init())
 
   async def on_unmount(self) -> None:
     self.settings.save()
@@ -149,10 +199,7 @@ class HackTheApp(App):
 
 
 def main():
-  token = os.getenv("HTB_TOKEN", "")
   app = HackTheApp()
-  app.settings = HTBSettings.load()
-  app.API = HTBApiSession(token, app)
   app.run()
 
 
