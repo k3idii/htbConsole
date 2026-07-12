@@ -223,6 +223,18 @@ async def _download_chal(api, cid, out_path):
     return {"saved": os.path.abspath(dest), "bytes": size, "url": url}
 
 
+async def _download_sherlock(api, sid, out_path):
+    """GET the sherlock download link, then save the zip to *out_path*."""
+    data = await api.api_htb_sherlock_download_link(sid)
+    url = data.get("url") if isinstance(data, dict) else None
+    if not url:
+        return {"error": "no download url in response", "response": data}
+    from .tuiComponents.downloader import async_download
+    dest = _resolve_out(out_path, f"sherlock_{sid}.zip")
+    size = await async_download(url, dest)
+    return {"saved": os.path.abspath(dest), "bytes": size, "url": url}
+
+
 def _generic_post(api, words, data_json):
     """`post <endpoint> [key=value...] [--data JSON]` -> raw POST coroutine."""
     if not words:
@@ -438,6 +450,18 @@ class _SherlockCmd(Dispatcher):
             return [_pick(t, ["id", "title", "description", "completed", "masked_flag"])
                     for t in _data(d)]
         return api.api_htb_sherlock_tasks(sid, params), shape
+
+    @cmddoc("sherlock download link <id> (url + expiry, no fetch)")
+    def handle_link(self, words, api, params, **kw):
+        sid = _one(words, "sherlock link")
+        def shape(d):
+            return _pick(d, ["url", "expires_in"]) if isinstance(d, dict) else d
+        return api.api_htb_sherlock_download_link(sid, params), shape
+
+    @cmddoc("fetch + save sherlock zip: download <id> <path>")
+    def handle_download(self, words, api, **kw):
+        sid, path = _n(words, 2, "sherlock download")
+        return _download_sherlock(api, sid, path), None
 
     @cmddoc("submit answer <sherlock-id> <task-id> <answer>")
     def handle_submit(self, words, api, data_json=None, **kw):

@@ -27,9 +27,11 @@ The examples below write **`htb`** as shorthand for `python3 -m htbconsole cli h
 ### 1. Explore (find unsolved work)
 
 ```bash
-# Challenges — status=incompleted = UNSOLVED (default list mixes solved in)
-htb chal list status=incompleted per_page=20
-htb chal list status=incompleted per_page=50 page=2   # paginate
+# Challenges — 
+#  state=active  ->  ative, free ; 
+#  status=incompleted -> UNSOLVED (default list mixes solved in)
+htb chal list state=active status=incompleted per_page=10
+htb chal list state=active status=incompleted per_page=10 page=2   # paginate
 htb chal categories                                   # category id/name map
 
 # Machines — no server-side unsolved filter; check the owns flags per item
@@ -85,9 +87,19 @@ Any endpoint not wrapped by a named command is reachable via
 
 ## Notes
 
+## Common HTB Sherlock Zip Passwords
+- PASSWORDS: `hackthebox` (default), `hacktheblue` (sherlocks)
+- When listing tasks, do not fetch more then 5
 - After solving, re-run the explore command — the item drops from
   `status=incompleted` once owned.
 - `chal start` output includes the target `ip`/`port` in its message; grab it with
   `--pick message` if needed.
 - Never brute force flags. Solve the challenge, then submit the real flag once.
 - Respect HTB rules; only interact with items on the authenticated account.
+- Always write full step-by-step solution to `SOLVE.md` and try to create genealized skill that might impove solvin similar tasks in future into `SKILL.md`
+- Always save all exploits,tools, notes and others files related to solved task following scheme :
+   `./machines/{name}/`
+   `./challenges/{category}/{difficulty}__{name}/`
+   `./sherlocks/{name}/`
+
+   
