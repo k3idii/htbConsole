@@ -306,6 +306,7 @@ class HTBApiSession(HTBSession):
     return await self.async_get("/api/v4/machine/list/retired/paginated", params=params, **kw)
 
   async def api_htb_machine_active(self, params=None, **kw):
+    kw.setdefault("cache_this", 0)
     return await self.async_get("/api/v4/machine/active", params=params, **kw)
 
   async def api_htb_machine_profile(self, name, params=None, **kw):
@@ -344,6 +345,7 @@ class HTBApiSession(HTBSession):
     return await self.async_get(f"/api/v4/season/user/rank/{season_id}", params=params, **kw)
 
   async def api_htb_connection_status(self, params=None, **kw):
+    kw.setdefault("cache_this", 0)
     return await self.async_get("/api/v4/connection/status", params=params, **kw)
 
   async def api_htb_connections_servers(self, params=None, **kw):

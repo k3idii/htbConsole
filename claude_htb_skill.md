@@ -38,6 +38,7 @@ htb chal categories                                   # category id/name map
 htb machine list per_page=20        # unsolved = authUserInUserOwns / authUserInRootOwns false (--raw to see them)
 htb machine retired per_page=20
 htb machine active                  # what's running now
+htb active                          # quick active machine check (shortcut)
 
 # Sherlocks (DFIR) — unsolved = is_owned false / progress < 100
 htb sherlock list status=incompleted per_page=20
@@ -72,9 +73,10 @@ htb chal download <id> <path>      # fetch + save the zip (path is REQUIRED)
 htb chal start <id>                # spawn container -> returns ip:port in the message
 htb chal stop  <id>
 
-# Machines: the CLI has no "start" verb — use the generic POST escape hatch:
-htb post /api/v4/vm/spawn     machine_id=<id>     # start a machine
-htb post /api/v4/vm/terminate machine_id=<id>     # stop
+# Machines (VM management)
+htb machine spawn <id>             # spawn/start VM (also: machine start <id>)
+htb machine terminate [id]         # stop VM (if [id] is omitted, targets currently active VM; also: machine stop [id])
+htb machine reset [id]             # reset/restart VM (if [id] is omitted, targets currently active VM)
 
 # Submit flags / answers
 htb chal submit <id> HTB{...}
