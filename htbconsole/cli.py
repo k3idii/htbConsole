@@ -348,6 +348,15 @@ class _HtbCmd(Dispatcher):
             return out
         return api.api_htb_profile(uid, params), shape
 
+    @cmddoc("currently active machine")
+    def handle_active(self, words, api, params, **kw):
+        def shape(d):
+            info = d.get("info") if isinstance(d, dict) else None
+            if not info:
+                return {"active": None}
+            return _pick(info, ["id", "name", "ip", "type", "expires_at"])
+        return api.api_htb_machine_active(params), shape
+
     @cmddoc("raw POST <endpoint> [key=value...] [--data JSON]")
     def handle_post(self, words, api, data_json=None, **kw):
         return _generic_post(api, words, data_json), None
@@ -516,6 +525,39 @@ class _MachineCmd(Dispatcher):
     def handle_submit(self, words, api, data_json=None, **kw):
         mid, flag = _n(words, 2, "machine submit")
         return api.api_htb_machine_submit(mid, flag), _shape_action
+
+    @cmddoc("spawn/start VM by <id>")
+    def handle_spawn(self, words, api, **kw):
+        mid = _one(words, "machine spawn")
+        return api.api_htb_vm_spawn(mid), _shape_action
+
+    handle_start = handle_spawn
+
+    async def _resolve_mid_or_active(self, words, api):
+        if words:
+            return words[0]
+        active_data = await api.api_htb_machine_active()
+        active_info = active_data.get("info") if isinstance(active_data, dict) else None
+        if active_info and "id" in active_info:
+            return str(active_info["id"])
+        raise ValueError("No machine ID provided and no active machine found to target.")
+
+    @cmddoc("terminate/stop active VM, or <id> if specified")
+    def handle_terminate(self, words, api, **kw):
+        async def run():
+            mid = await self._resolve_mid_or_active(words, api)
+            return await api.api_htb_vm_terminate(mid)
+        return run(), _shape_action
+
+    handle_stop = handle_terminate
+
+    @cmddoc("reset active VM, or <id> if specified")
+    def handle_reset(self, words, api, **kw):
+        async def run():
+            mid = await self._resolve_mid_or_active(words, api)
+            return await api.api_htb_vm_reset(mid)
+        return run(), _shape_action
+
 
 
 class _SeasonCmd(Dispatcher):

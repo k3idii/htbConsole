@@ -180,7 +180,7 @@ class HTBSession:
 
   async def make_async_request(self, method="GET", endpoint="/",  cache_this=1, **kw):
     if self._token_dead:
-      raise TokenExpiredError("HTB API token is expired or invalid")
+      raise TokenExpiredError("HTB API marked as dead. check !")
 
     URL = self._make_url(endpoint)
     req_id = f"{method}_{endpoint}_{str(kw)}"
@@ -200,7 +200,7 @@ class HTBSession:
       self._token_dead = True
       self._handle_log_event("API::TOKEN EXPIRED or INVALID — update HTB_TOKEN and restart")
       self._handle_notify("Token expired or invalid. Update HTB_TOKEN and restart.", severity="error", timeout=10)
-      raise TokenExpiredError("HTB API token is expired or invalid")
+      raise TokenExpiredError(f"HTB API token is expired or invalid (response : {response.status_code} : {self._error_message(response)})")
 
     if response.status_code not in (200, 201):
       raise Exception(f"Request {method} to {URL} fail with {response.status_code}: {self._error_message(response)}")

@@ -4,7 +4,7 @@ import sys
 
 def prompt():
     try:
-        choice = input("[h]tb or [c]tf ? ").strip().lower()
+        choice = input("[h]tb, [c]tf or [cli] ? ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         sys.exit(0)
     return choice
@@ -32,11 +32,21 @@ def main():
             mode = "htb"
         elif choice in ("c", "ctf"):
             mode = "ctf"
+        elif choice in ("cli", "cl"):
+            mode = "cli"
         else:
             print(f"Unknown choice: {choice}")
             sys.exit(1)
 
-    if mode == "htb":
+    if mode == "cli":
+        try:
+            cmd = input("cli command (e.g., htb active): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            sys.exit(0)
+        import shlex
+        from .cli import main as cli_main
+        sys.exit(cli_main(shlex.split(cmd)))
+    elif mode == "htb":
         from .tuiHTB import main as htb_main
         htb_main()
     else:
