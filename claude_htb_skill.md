@@ -70,13 +70,15 @@ htb chal link <id>                 # signed download URL (url + expiry), no down
 htb chal download <id> <path>      # fetch + save the zip (path is REQUIRED)
 
 # Challenge container (for pwn/web/etc. that need a live target)
-htb chal start <id>                # spawn container -> returns ip:port in the message
+htb chal start <id>                # spawn container -> returns message
+htb chal start <id> --wait         # spawn + poll until ready -> returns {ip, ports}
 htb chal stop  <id>
 
 # Machines (VM management)
-htb machine spawn <id>             # spawn/start VM (also: machine start <id>)
-htb machine terminate [id]         # stop VM (if [id] is omitted, targets currently active VM; also: machine stop [id])
-htb machine reset [id]             # reset/restart VM (if [id] is omitted, targets currently active VM)
+htb machine spawn <id>             # spawn VM -> returns message (also: machine start <id>)
+htb machine spawn <id> --wait      # spawn + poll until IP ready -> returns {id, name, ip, ...}
+htb machine terminate [id]         # stop VM (omit id = targets active VM; also: machine stop [id])
+htb machine reset [id]             # reset VM (omit id = targets active VM)
 
 # Submit flags / answers
 htb chal submit <id> HTB{...}
@@ -92,16 +94,19 @@ Any endpoint not wrapped by a named command is reachable via
 ## Common HTB Sherlock Zip Passwords
 - PASSWORDS: `hackthebox` (default), `hacktheblue` (sherlocks)
 - When listing tasks, do not fetch more then 5
+- When starting containers/machines - use max 1 (ONE) at time
 - After solving, re-run the explore command — the item drops from
   `status=incompleted` once owned.
-- `chal start` output includes the target `ip`/`port` in its message; grab it with
+- `--wait` on `chal start` or `machine spawn`: polls every 5s (max 3min) until
+  ready, then prints IP (+ ports for challenges). Progress on stderr, result on stdout.
+- Without `--wait`, `chal start` returns just the action message; grab ip with
   `--pick message` if needed.
 - Never brute force flags. Solve the challenge, then submit the real flag once.
 - Respect HTB rules; only interact with items on the authenticated account.
 - Always write full step-by-step solution to `SOLVE.md` and try to create genealized skill that might impove solvin similar tasks in future into `SKILL.md`
 - Always save all exploits,tools, notes and others files related to solved task following scheme :
    `./machines/{name}/`
-   `./challenges/{category}/{difficulty}__{name}/`
+   `./challenges/{category:uppercase}/{difficulty}__{name}/`
    `./sherlocks/{name}/`
 
    

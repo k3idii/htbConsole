@@ -165,6 +165,42 @@ def _filter_items(items, params):
     return items
 
 
+# --- wait-for-ready helpers (spawn/start + poll) ---------------------------
+
+_POLL_INTERVAL = 5
+_POLL_MAX = 36  # 36 * 5s = 3 min
+
+
+async def _spawn_machine_wait(api, machine_id):
+    rsp = await api.api_htb_vm_spawn(machine_id)
+    msg = rsp.get("message", "") if isinstance(rsp, dict) else ""
+    sys.stderr.write(f"[wait] spawn: {msg}\n")
+    for attempt in range(_POLL_MAX):
+        await asyncio.sleep(_POLL_INTERVAL)
+        data = await api.api_htb_machine_active(cache_this=0)
+        info = data.get("info") if isinstance(data, dict) else None
+        if info and info.get("ip"):
+            sys.stderr.write(f"[wait] ready ({(attempt + 1) * _POLL_INTERVAL}s)\n")
+            return _pick(info, ["id", "name", "ip", "type", "os", "expires_at"])
+        sys.stderr.write(f"[wait] polling... ({(attempt + 1) * _POLL_INTERVAL}s)\n")
+    return {"error": "timeout waiting for machine IP", "last_response": rsp}
+
+
+async def _start_chal_wait(api, chal_id):
+    rsp = await api.api_htb_chal_start(chal_id)
+    msg = rsp.get("message", "") if isinstance(rsp, dict) else ""
+    sys.stderr.write(f"[wait] start: {msg}\n")
+    for attempt in range(_POLL_MAX):
+        await asyncio.sleep(_POLL_INTERVAL)
+        data = await api.api_htb_chal_info(chal_id, cache_this=0)
+        play = (data.get("challenge", {}) or {}).get("play_info") if isinstance(data, dict) else None
+        if isinstance(play, dict) and play.get("status") == "ready":
+            sys.stderr.write(f"[wait] ready ({(attempt + 1) * _POLL_INTERVAL}s)\n")
+            return {"ip": play.get("ip"), "ports": play.get("ports")}
+        sys.stderr.write(f"[wait] polling... ({(attempt + 1) * _POLL_INTERVAL}s)\n")
+    return {"error": "timeout waiting for container", "last_response": rsp}
+
+
 # --- composite operations (multi-step; async, take the live api) ------------
 
 async def _ctf_tasks(api, ctf_id, filters):
@@ -412,9 +448,11 @@ class _ChalCmd(Dispatcher):
         cid, path = _n(words, 2, "chal download")
         return _download_chal(api, cid, path), None
 
-    @cmddoc("start challenge container <id>")
+    @cmddoc("start challenge container <id> [--wait: poll until IP:port ready]")
     def handle_start(self, words, api, **kw):
         cid = _one(words, "chal start")
+        if kw.get("wait"):
+            return _start_chal_wait(api, cid), None
         return api.api_htb_chal_start(cid), _shape_action
 
     @cmddoc("stop challenge container <id>")
@@ -526,9 +564,11 @@ class _MachineCmd(Dispatcher):
         mid, flag = _n(words, 2, "machine submit")
         return api.api_htb_machine_submit(mid, flag), _shape_action
 
-    @cmddoc("spawn/start VM by <id>")
+    @cmddoc("spawn/start VM by <id> [--wait: poll until IP ready]")
     def handle_spawn(self, words, api, **kw):
         mid = _one(words, "machine spawn")
+        if kw.get("wait"):
+            return _spawn_machine_wait(api, mid), None
         return api.api_htb_vm_spawn(mid), _shape_action
 
     handle_start = handle_spawn
@@ -677,6 +717,8 @@ def main(argv=None):
     parser.add_argument("--page", help="convenience query param: page=N")
     parser.add_argument("--per-page", dest="per_page", help="convenience query param: per_page=N")
     parser.add_argument("--token", help="API token (default: HTB_TOKEN / CTF_TOKEN env)")
+    parser.add_argument("--wait", action="store_true",
+                        help="after spawn/start, poll until the machine or container is ready and print IP (+ ports)")
     parser.add_argument("--debug", action="store_true", help="print API messages to stderr")
     parser.add_argument("words", nargs="*", help="<htb|ctf> <command...> [args] [key=value ...]")
     args = parser.parse_args(argv)
@@ -713,7 +755,8 @@ def main(argv=None):
 
     async def _run():
         try:
-            result, shape = _MainCmd(list(words), api=api, params=params, data_json=args.data).result
+            result, shape = _MainCmd(list(words), api=api, params=params,
+                                        data_json=args.data, wait=args.wait).result
             return await result, shape
         finally:
             await api.close()
