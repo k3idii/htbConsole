@@ -32,8 +32,8 @@ def execute_unpack(dir_path, filename, password=None, unpack_cmd=None):
     return True
 
 
-async def async_download(url, out_file, timeout=30):
-    async with httpx.AsyncClient(verify=False) as client:
+async def async_download(url, out_file, timeout=30, headers=None):
+    async with httpx.AsyncClient(verify=False, headers=headers) as client:
         response = await client.get(url, timeout=timeout, follow_redirects=True)
         response.raise_for_status()
         with open(out_file, "wb") as f:

@@ -10,17 +10,16 @@ for the full JSON, `--pick <dotted.path>` to drill (e.g. `--pick 0.id`, `--pick 
 
 ## Setup
 
-Needs an HTB API token in `HTB_TOKEN`. In this repo:
-
+Needs an HTB API token in `HTB_TOKEN`. 
 ```bash
 set -a; source ./token.txt; set +a      # exports HTB_TOKEN (+ CTF_TOKEN)
 ```
 
-Invoke as `python3 -m htbconsole cli htb <cmd>` (or `htbconsole cli htb <cmd>` if installed).
-Run `python3 -m htbconsole cli` with no args to see the full generated command list.
+Invoke as `uvx htbconsole cli <cmd>` (or `htbconsole cli htb <cmd>` if installed).
+Run `uvx htbconsole cli` with no args to see the full generated command list.
 
-The examples below write **`htb`** as shorthand for `python3 -m htbconsole cli htb`
-(optionally `alias htb='python3 -m htbconsole cli htb'`).
+The examples below write **`htb`** as shorthand for `uvx htbconsole cli htb`
+(optionally `alias htb='uvx htbconsole cli htb'`).
 
 ## Workflow: explore → select → solve
 
@@ -65,6 +64,12 @@ htb sherlock tasks <id>      # the questions to answer (masked_flag shows format
 ### 3. Solve
 
 ```bash
+# Setup working directories (fetches info from API, creates dir)
+htb chal setup <id>                # -> challenges/{category}/{difficulty}__{name}/ + download + extract
+htb machine setup <name>           # -> machines/{name}/
+htb sherlock setup <id>            # -> sherlocks/{name}/
+# Output: {path, download, extracted} for chal; {path} for machine/sherlock
+
 # Challenge files
 htb chal link <id>                 # signed download URL (url + expiry), no download
 htb chal download <id> <path>      # fetch + save the zip (path is REQUIRED)
@@ -92,6 +97,7 @@ Any endpoint not wrapped by a named command is reachable via
 ## Notes
 
 ## Common HTB Sherlock Zip Passwords
+- if anything is missing or not clear ALWAYS ASK OPERATOR
 - PASSWORDS: `hackthebox` (default), `hacktheblue` (sherlocks)
 - When listing tasks, do not fetch more then 5
 - When starting containers/machines - use max 1 (ONE) at time
@@ -103,10 +109,12 @@ Any endpoint not wrapped by a named command is reachable via
   `--pick message` if needed.
 - Never brute force flags. Solve the challenge, then submit the real flag once.
 - Respect HTB rules; only interact with items on the authenticated account.
-- Always write full step-by-step solution to `SOLVE.md` and try to create genealized skill that might impove solvin similar tasks in future into `SKILL.md`
+- Always create explit files/scripts rather then inline execution. Save all sub-certsion of exploits/toots
+- Always write full step-by-step solution to `SOLVE.md` and try to create genealized skill that might impove solvin similar tasks in future into `SKILL.md` in category directory
+- try loaing `SKILL.md` from category directory
 - Always save all exploits,tools, notes and others files related to solved task following scheme :
    `./machines/{name}/`
-   `./challenges/{category:uppercase}/{difficulty}__{name}/`
+   `./challenges/{category}/{difficulty}__{name}/` 
    `./sherlocks/{name}/`
-
+   (all variables are LOWER CASE)
    

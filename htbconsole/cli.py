@@ -40,6 +40,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 
 from .appSettings import HTBSettings, CTFSettings
@@ -94,6 +95,94 @@ def _meta(d):
 def _shape_action(d):
     """Shared reducer for mutating actions (start/stop/submit): status-ish fields."""
     return (_pick(d, ["message", "success", "id", "status"]) or d) if isinstance(d, dict) else d
+
+
+# --- directory setup helpers ------------------------------------------------
+
+_SAFE_RE = re.compile(r'[^a-z0-9]')
+
+
+def _safe(name):
+    return _SAFE_RE.sub('_', name.lower()).strip('_')
+
+
+def _mksetup(path):
+    os.makedirs(path, exist_ok=True)
+    return os.path.abspath(path)
+
+
+def _extract_zip(zip_path, dest_dir):
+    import zipfile
+    passwords = [None, b"hackthebox", b"hacktheblue"]
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for pwd in passwords:
+            try:
+                zf.extractall(dest_dir, pwd=pwd)
+                return len(zf.namelist())
+            except (RuntimeError, Exception):
+                continue
+    raise RuntimeError(f"Cannot extract {zip_path} — tried passwords: none, hackthebox, hacktheblue")
+
+
+async def _setup_chal(api, chal_id):
+    data = await api.api_htb_chal_info(chal_id)
+    c = data.get("challenge", {}) if isinstance(data, dict) else {}
+    name = _safe(c.get("name", f"id_{chal_id}"))
+    cat = _safe(c.get("category_name", "unknown"))
+    diff = _safe(c.get("difficulty", "unknown"))
+    path = _mksetup(os.path.join("challenges", cat, f"{diff}__{name}"))
+    result = {"path": path}
+
+    has_download = "download" in (c.get("play_methods") or [])
+    if not has_download:
+        result["download"] = None
+        result["extracted"] = 0
+        return result
+
+    file_name = c.get("file_name") or f"challenge_{chal_id}.zip"
+    zip_dest = os.path.join(path, file_name)
+    result["download"] = file_name
+
+    if not os.path.exists(zip_dest):
+        dl_data = await api.api_htb_chal_download_link(chal_id)
+        url = dl_data.get("url") if isinstance(dl_data, dict) else None
+        if url:
+            from .tuiComponents.downloader import async_download
+            await async_download(url, zip_dest, headers=api.headers)
+            sys.stderr.write(f"[setup] downloaded {file_name}\n")
+        else:
+            sys.stderr.write(f"[setup] no download url available\n")
+            result["extracted"] = 0
+            return result
+    else:
+        sys.stderr.write(f"[setup] {file_name} already exists\n")
+
+    extract_dir = os.path.join(path, "extracted")
+    if os.path.isdir(extract_dir) and os.listdir(extract_dir):
+        count = len(os.listdir(extract_dir))
+        sys.stderr.write(f"[setup] already extracted ({count} files)\n")
+        result["extracted"] = count
+    else:
+        os.makedirs(extract_dir, exist_ok=True)
+        count = _extract_zip(zip_dest, extract_dir)
+        sys.stderr.write(f"[setup] extracted {count} files\n")
+        result["extracted"] = count
+
+    return result
+
+
+async def _setup_machine(api, name_or_id):
+    data = await api.api_htb_machine_profile(name_or_id)
+    m = data.get("info", {}) if isinstance(data, dict) else {}
+    name = _safe(m.get("name", f"id_{name_or_id}"))
+    return {"path": _mksetup(os.path.join("machines", name))}
+
+
+async def _setup_sherlock(api, sherlock_id):
+    data = await api.api_htb_sherlock_info(sherlock_id)
+    s = data.get("data", {}) if isinstance(data, dict) else {}
+    name = _safe(s.get("name", f"id_{sherlock_id}"))
+    return {"path": _mksetup(os.path.join("sherlocks", name))}
 
 
 # --- arg + output helpers ---------------------------------------------------
@@ -255,7 +344,7 @@ async def _download_chal(api, cid, out_path):
         return {"error": "no download url in response", "response": data}
     from .tuiComponents.downloader import async_download
     dest = _resolve_out(out_path, f"challenge_{cid}.zip")
-    size = await async_download(url, dest)
+    size = await async_download(url, dest, headers=api.headers)
     return {"saved": os.path.abspath(dest), "bytes": size, "url": url}
 
 
@@ -267,7 +356,7 @@ async def _download_sherlock(api, sid, out_path):
         return {"error": "no download url in response", "response": data}
     from .tuiComponents.downloader import async_download
     dest = _resolve_out(out_path, f"sherlock_{sid}.zip")
-    size = await async_download(url, dest)
+    size = await async_download(url, dest, headers=api.headers)
     return {"saved": os.path.abspath(dest), "bytes": size, "url": url}
 
 
@@ -460,6 +549,11 @@ class _ChalCmd(Dispatcher):
         cid = _one(words, "chal stop")
         return api.api_htb_chal_stop(cid), _shape_action
 
+    @cmddoc("create working dir: setup <id>")
+    def handle_setup(self, words, api, **kw):
+        cid = _one(words, "chal setup")
+        return _setup_chal(api, cid), None
+
     @cmddoc("submit flag <id> <flag>")
     def handle_submit(self, words, api, data_json=None, **kw):
         cid, flag = _n(words, 2, "chal submit")
@@ -509,6 +603,11 @@ class _SherlockCmd(Dispatcher):
     def handle_download(self, words, api, **kw):
         sid, path = _n(words, 2, "sherlock download")
         return _download_sherlock(api, sid, path), None
+
+    @cmddoc("create working dir: setup <id>")
+    def handle_setup(self, words, api, **kw):
+        sid = _one(words, "sherlock setup")
+        return _setup_sherlock(api, sid), None
 
     @cmddoc("submit answer <sherlock-id> <task-id> <answer>")
     def handle_submit(self, words, api, data_json=None, **kw):
@@ -563,6 +662,11 @@ class _MachineCmd(Dispatcher):
     def handle_submit(self, words, api, data_json=None, **kw):
         mid, flag = _n(words, 2, "machine submit")
         return api.api_htb_machine_submit(mid, flag), _shape_action
+
+    @cmddoc("create working dir: setup <name>")
+    def handle_setup(self, words, api, **kw):
+        name = _one(words, "machine setup")
+        return _setup_machine(api, name), None
 
     @cmddoc("spawn/start VM by <id> [--wait: poll until IP ready]")
     def handle_spawn(self, words, api, **kw):
