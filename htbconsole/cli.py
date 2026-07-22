@@ -852,6 +852,7 @@ def main(argv=None):
     session_cls = HTBApiSession if platform == "htb" else HTBCTFSession
     cache_file = os.path.join(settings.workdir, f"{platform}_cli_cache.json")
     api = session_cls(token, cache_file=cache_file)
+    api.USE_CACHE = False
     if args.debug:
         api._handle_log_event = _log_event
         api._handle_log_debug = _log_debug

@@ -1,6 +1,6 @@
 ---
 name: htb-cli
-description: Explore, select, and solve Hack The Box items (challenges, machines, sherlocks) from the terminal using the htbconsole CLI. Use when the user wants to browse HTB content, find unsolved items, pull challenge files, start containers, or submit flags without opening the TUI.
+description: Explore, select, and solve Hack The Box items (challenges, machines, sherlocks) from the terminal
 ---
 
 # HTB via the htbconsole CLI
@@ -14,6 +14,7 @@ Needs an HTB API token in `HTB_TOKEN`.
 ```bash
 set -a; source ./token.txt; set +a      # exports HTB_TOKEN (+ CTF_TOKEN)
 ```
+If token is missing - ask operator.
 
 Invoke as `uvx htbconsole cli <cmd>` (or `htbconsole cli htb <cmd>` if installed).
 Run `uvx htbconsole cli` with no args to see the full generated command list.
@@ -25,23 +26,24 @@ The examples below write **`htb`** as shorthand for `uvx htbconsole cli htb`
 
 ### 1. Explore (find unsolved work)
 
+All list subcommands take per_page=N page=M parameters for pagination.
+
 ```bash
 # Challenges — 
+htb chal list state=active status=incompleted 
 #  state=active  ->  ative, free ; 
 #  status=incompleted -> UNSOLVED (default list mixes solved in)
-htb chal list state=active status=incompleted per_page=10
-htb chal list state=active status=incompleted per_page=10 page=2   # paginate
 htb chal categories                                   # category id/name map
 
 # Machines — no server-side unsolved filter; check the owns flags per item
-htb machine list per_page=20        # unsolved = authUserInUserOwns / authUserInRootOwns false (--raw to see them)
-htb machine retired per_page=20
+htb machine list
+# unsolved = authUserInUserOwns / authUserInRootOwns false (--raw to see them)
+htb machine retired
 htb machine active                  # what's running now
 htb active                          # quick active machine check (shortcut)
 
 # Sherlocks (DFIR) — unsolved = is_owned false / progress < 100
-htb sherlock list status=incompleted per_page=20
-
+htb sherlock list status=incompleted 
 # Season
 htb season list
 ```
@@ -75,13 +77,11 @@ htb chal link <id>                 # signed download URL (url + expiry), no down
 htb chal download <id> <path>      # fetch + save the zip (path is REQUIRED)
 
 # Challenge container (for pwn/web/etc. that need a live target)
-htb chal start <id>                # spawn container -> returns message
-htb chal start <id> --wait         # spawn + poll until ready -> returns {ip, ports}
+htb chal start <id> [--wait]      # spawn + poll until ready -> returns {ip, ports}
 htb chal stop  <id>
 
 # Machines (VM management)
-htb machine spawn <id>             # spawn VM -> returns message (also: machine start <id>)
-htb machine spawn <id> --wait      # spawn + poll until IP ready -> returns {id, name, ip, ...}
+htb machine spawn <id> [--wait]      # spawn + poll until IP ready -> returns {id, name, ip, ...}
 htb machine terminate [id]         # stop VM (omit id = targets active VM; also: machine stop [id])
 htb machine reset [id]             # reset VM (omit id = targets active VM)
 
@@ -94,27 +94,27 @@ htb sherlock submit <sherlock-id> <task-id> <answer>
 Any endpoint not wrapped by a named command is reachable via
 `htb post <endpoint> key=value... [--data '{"json":...}']`.
 
-## Notes
-
 ## Common HTB Sherlock Zip Passwords
 - if anything is missing or not clear ALWAYS ASK OPERATOR
 - PASSWORDS: `hackthebox` (default), `hacktheblue` (sherlocks)
+
+## Notes
 - When listing tasks, do not fetch more then 5
 - When starting containers/machines - use max 1 (ONE) at time
 - After solving, re-run the explore command — the item drops from
   `status=incompleted` once owned.
 - `--wait` on `chal start` or `machine spawn`: polls every 5s (max 3min) until
-  ready, then prints IP (+ ports for challenges). Progress on stderr, result on stdout.
-- Without `--wait`, `chal start` returns just the action message; grab ip with
-  `--pick message` if needed.
-- Never brute force flags. Solve the challenge, then submit the real flag once.
+  ready, then prints IP (+ ports for challenges). Without `--wait` returns just the action message; grab ip with `--pick message` if needed.
+- Never brute force flags.
+- Solve the challenge, then submit the flag.
 - Respect HTB rules; only interact with items on the authenticated account.
-- Always create explit files/scripts rather then inline execution. Save all sub-certsion of exploits/toots
-- Always write full step-by-step solution to `SOLVE.md` and try to create genealized skill that might impove solvin similar tasks in future into `SKILL.md` in category directory
-- try loaing `SKILL.md` from category directory
-- Always save all exploits,tools, notes and others files related to solved task following scheme :
+- Always write full step-by-step solution to `SOLVE.md`.
+- After each step/command save short summary into `progress.md`.
+- Try to load `SKILL.md` from category directory.
+- Try to create genealized skill that might impove solvin similar tasks in future into `SKILL.md` in category directory
+- Always create explit files/scripts rather then inline execution. Save all sub-certsion of exploits/toots. Always save all files related to solved task following scheme :
    `./machines/{name}/`
    `./challenges/{category}/{difficulty}__{name}/` 
    `./sherlocks/{name}/`
-   (all variables are LOWER CASE)
+   (all are LOWER CASE, a-z,0-9 only)
    
