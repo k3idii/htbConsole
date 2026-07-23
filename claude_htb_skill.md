@@ -125,6 +125,10 @@ ctf <id> setup <task-id>
 # -> ctfs/{YYYY-MM}__{ctf_id}__{ctf_name}/{category}_{difficulty}__{task_name}/
 # Output: {path, download, extracted}
 
+# Task container (for web/pwn challenges with docker)
+ctf <id> start <task-id> [--wait]   # start container; --wait polls until IP:port ready -> {ip, ports}
+ctf <id> stop <task-id>             # stop container
+
 # Submit flag
 ctf <id> submit <task-id> HTB{...}
 ```

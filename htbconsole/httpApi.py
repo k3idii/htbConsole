@@ -397,6 +397,12 @@ class HTBCTFSession(HTBSession):
   async def api_ctf_download(self, chall_id):
     return await self.download_bytes(f"/api/challenges/{chall_id}/download")
 
+  async def api_ctf_task_start(self, task_id):
+    return await self.async_post("/api/challenges/containers/start", {"id": _maybe_int(task_id)})
+
+  async def api_ctf_task_stop(self, task_id):
+    return await self.async_post("/api/challenges/containers/stop", {"id": _maybe_int(task_id)})
+
   async def api_ctf_submit(self, task_id, flag):
     body = {"challenge_id": _maybe_int(task_id), "flag": flag}
     return await self.async_post("/api/flags/own", body)

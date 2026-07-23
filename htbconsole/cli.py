@@ -384,6 +384,29 @@ async def _ctf_task(api, ctf_id, task_id):
     return {"error": f"task {task_id} not found in CTF {ctf_id}"}
 
 
+async def _start_ctf_task_wait(api, ctf_id, task_id):
+    try:
+        rsp = await api.api_ctf_task_start(task_id)
+        msg = rsp.get("message", "") if isinstance(rsp, dict) else ""
+    except Exception as e:
+        msg = str(e)
+        rsp = {"message": msg}
+    sys.stderr.write(f"[wait] start: {msg}\n")
+    for attempt in range(_POLL_MAX):
+        await asyncio.sleep(_POLL_INTERVAL)
+        detail = await api.api_ctf_info(ctf_id, cache_this=0)
+        for c in detail.get("challenges", []):
+            if c.get("id") == int(task_id):
+                if c.get("docker_online") and c.get("hostname"):
+                    ip = c["hostname"]
+                    ports = c.get("docker_ports", [])
+                    sys.stderr.write(f"[wait] ready ({(attempt + 1) * _POLL_INTERVAL}s)\n")
+                    return {"ip": ip, "ports": ports}
+                break
+        sys.stderr.write(f"[wait] polling... ({(attempt + 1) * _POLL_INTERVAL}s)\n")
+    return {"error": "timeout waiting for container", "last_response": rsp}
+
+
 async def _setup_ctf_task(api, ctf_id, task_id):
     detail = await api.api_ctf_info(ctf_id)
     ctf_name = _safe(detail.get("name", f"id_{ctf_id}"))
@@ -906,6 +929,18 @@ class _CtfCtxCmd(Dispatcher):
     def handle_setup(self, words, ctf_id, **kw):
         tid = _one(words, "ctf setup")
         return _setup_ctf_task(self.api, ctf_id, tid), None
+
+    @cmddoc("start task container <task-id> [--wait: poll until IP:port ready]")
+    def handle_start(self, words, ctf_id, **kw):
+        tid = _one(words, "ctf start")
+        if kw.get("wait"):
+            return _start_ctf_task_wait(self.api, ctf_id, tid), None
+        return self.api.api_ctf_task_start(tid), _shape_action
+
+    @cmddoc("stop task container <task-id>")
+    def handle_stop(self, words, ctf_id, **kw):
+        tid = _one(words, "ctf stop")
+        return self.api.api_ctf_task_stop(tid), _shape_action
 
     @cmddoc("submit flag <task-id> <flag>")
     def handle_submit(self, words, ctf_id, **kw):
