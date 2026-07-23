@@ -1,3 +1,3 @@
 """htbConsole — Terminal UI for the Hack The Box platform and CTF competitions."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
