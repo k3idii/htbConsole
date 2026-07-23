@@ -94,6 +94,41 @@ htb sherlock submit <sherlock-id> <task-id> <answer>
 Any endpoint not wrapped by a named command is reachable via
 `htb post <endpoint> key=value... [--data '{"json":...}']`.
 
+## CTF Platform
+
+Uses `CTF_TOKEN` (separate from `HTB_TOKEN`). Shorthand below: `ctf` = `uvx htbconsole cli ctf`.
+
+### Browse CTFs
+
+```bash
+ctf list                          # ongoing/upcoming CTFs (minimal: id, name, starts_at, canJoin . use --full all fields (status, team, players, format, mcp_access_mode, etc.)
+ctf past                          # past CTFs (paginated)
+ctf <id> info                     # CTF detail (no challenges in output)
+ctf <id> scores                   # scoreboard
+```
+
+### Tasks & Categories
+
+```bash
+ctf <id> categories               # category summary (id, name, total, solved)
+ctf <id> cat                      # alias for categories
+ctf <id> tasks                    # all tasks (id, name, category, difficulty, solved)
+# Filters : category=[Web,...]  solved=false - unsolved only, difficulty=[easy,medium,hard,insane] 
+ctf <id> task <task-id>           # full task detail
+```
+
+### Solve
+
+```bash
+# Setup working directory (creates dir + downloads zip + extracts)
+ctf <id> setup <task-id>
+# -> ctfs/{YYYY-MM}__{ctf_id}__{ctf_name}/{category}_{difficulty}__{task_name}/
+# Output: {path, download, extracted}
+
+# Submit flag
+ctf <id> submit <task-id> HTB{...}
+```
+
 ## Common HTB Sherlock Zip Passwords
 - if anything is missing or not clear ALWAYS ASK OPERATOR
 - PASSWORDS: `hackthebox` (default), `hacktheblue` (sherlocks)
@@ -116,5 +151,6 @@ Any endpoint not wrapped by a named command is reachable via
    `./machines/{name}/`
    `./challenges/{category}/{difficulty}__{name}/` 
    `./sherlocks/{name}/`
+   `./ctfs/{YYYY-MM}__{ctf_id}__{ctf_name}/{category}_{difficulty}__{task_name}/`
    (all are LOWER CASE, a-z,0-9 only)
    

@@ -34,7 +34,7 @@ CTF:
 
 Generic escape hatch (raw POST, any endpoint):
     htbconsole cli htb post /api/v4/challenge/own challenge_id=123 flag=HTB{...}
-    htbconsole cli ctf post /api/flags --data '{"challenge_id":9876,"flag":"HTB{...}"}'
+    htbconsole cli ctf post /api/flags/own --data '{"challenge_id":9876,"flag":"HTB{...}"}'
 """
 import argparse
 import asyncio
@@ -44,7 +44,7 @@ import re
 import sys
 
 from .appSettings import HTBSettings, CTFSettings
-from .httpApi import HTBApiSession, HTBCTFSession
+from .httpApi import HTBSession, HTBApiSession, HTBCTFSession
 
 TOKEN_ENV = {"htb": "HTB_TOKEN", "ctf": "CTF_TOKEN"}
 
@@ -111,6 +111,67 @@ def _mksetup(path):
     return os.path.abspath(path)
 
 
+def _write_task_md(path, info, kind):
+    """Write task.md with challenge/machine/sherlock metadata into *path*."""
+    dest = os.path.join(path, "task.md")
+    if os.path.exists(dest):
+        sys.stderr.write(f"[setup] task.md already exists\n")
+        return dest
+
+    lines = []
+    name = info.get("name", "?")
+
+    if kind == "challenge":
+        lines.append(f"# {name}\n")
+        lines.append(f"- **Type**: Challenge")
+        lines.append(f"- **Category**: {info.get('category_name', '?')}")
+        lines.append(f"- **Difficulty**: {info.get('difficulty', '?')}")
+        lines.append(f"- **Solves**: {info.get('solves', '?')}")
+        lines.append(f"- **State**: {info.get('state', '?')}")
+        lines.append(f"- **Play Methods**: {', '.join(info.get('play_methods') or ['?'])}")
+        desc = info.get("description", "")
+        if desc:
+            lines.append(f"\n## Description\n\n{desc}")
+
+    elif kind == "machine":
+        lines.append(f"# {name}\n")
+        lines.append(f"- **Type**: Machine")
+        lines.append(f"- **OS**: {info.get('os', '?')}")
+        lines.append(f"- **Difficulty**: {info.get('difficultyText', '?')}")
+        lines.append(f"- **Points**: {info.get('points', '?')}")
+        lines.append(f"- **Rating**: {info.get('stars', info.get('star', '?'))}")
+        release = info.get("release", "")
+        if release:
+            lines.append(f"- **Release**: {release[:10]}")
+        maker = (info.get("maker") or {}).get("name")
+        if maker:
+            makers = maker
+            maker2 = (info.get("maker2") or {}).get("name")
+            if maker2:
+                makers += f", {maker2}"
+            lines.append(f"- **Maker**: {makers}")
+        lines.append(f"- **User Owns**: {info.get('user_owns_count', '?')}")
+        lines.append(f"- **Root Owns**: {info.get('root_owns_count', '?')}")
+        synopsis = info.get("synopsis", "")
+        if synopsis:
+            lines.append(f"\n## Description\n\n{synopsis}")
+
+    elif kind == "sherlock":
+        lines.append(f"# {name}\n")
+        lines.append(f"- **Type**: Sherlock")
+        lines.append(f"- **Category**: {info.get('category_name', '?')}")
+        lines.append(f"- **Difficulty**: {info.get('difficulty', '?')}")
+        lines.append(f"- **Solves**: {info.get('user_owns_count', info.get('solves', '?'))}")
+        lines.append(f"- **Rating**: {info.get('rating', '?')}")
+        lines.append(f"- **State**: {info.get('state', '?')}")
+
+    text = "\n".join(lines) + "\n"
+    with open(dest, "w") as f:
+        f.write(text)
+    sys.stderr.write(f"[setup] wrote task.md\n")
+    return dest
+
+
 def _extract_zip(zip_path, dest_dir):
     import zipfile
     passwords = [None, b"hackthebox", b"hacktheblue"]
@@ -131,6 +192,7 @@ async def _setup_chal(api, chal_id):
     cat = _safe(c.get("category_name", "unknown"))
     diff = _safe(c.get("difficulty", "unknown"))
     path = _mksetup(os.path.join("challenges", cat, f"{diff}__{name}"))
+    _write_task_md(path, c, "challenge")
     result = {"path": path}
 
     has_download = "download" in (c.get("play_methods") or [])
@@ -175,14 +237,18 @@ async def _setup_machine(api, name_or_id):
     data = await api.api_htb_machine_profile(name_or_id)
     m = data.get("info", {}) if isinstance(data, dict) else {}
     name = _safe(m.get("name", f"id_{name_or_id}"))
-    return {"path": _mksetup(os.path.join("machines", name))}
+    path = _mksetup(os.path.join("machines", name))
+    _write_task_md(path, m, "machine")
+    return {"path": path}
 
 
 async def _setup_sherlock(api, sherlock_id):
     data = await api.api_htb_sherlock_info(sherlock_id)
     s = data.get("data", {}) if isinstance(data, dict) else {}
     name = _safe(s.get("name", f"id_{sherlock_id}"))
-    return {"path": _mksetup(os.path.join("sherlocks", name))}
+    path = _mksetup(os.path.join("sherlocks", name))
+    _write_task_md(path, s, "sherlock")
+    return {"path": path}
 
 
 # --- arg + output helpers ---------------------------------------------------
@@ -243,9 +309,8 @@ def _filter_items(items, params):
     """Client-side filter of a list of dicts by key=value (used for CTF tasks)."""
     for k, v in params:
         if k == "category":
-            from .tuiComponents.ctf_challs import CATEGORY_NAMES
             items = [c for c in items
-                     if CATEGORY_NAMES.get(c.get("challenge_category_id", 0), "").lower() == v.lower()]
+                     if c.get("category", "").lower() == v.lower()]
         elif k == "solved":
             want = v.lower() in ("1", "true", "yes")
             items = [c for c in items if bool(c.get("solved")) == want]
@@ -293,18 +358,17 @@ async def _start_chal_wait(api, chal_id):
 # --- composite operations (multi-step; async, take the live api) ------------
 
 async def _ctf_tasks(api, ctf_id, filters):
-    detail = await api.api_ctf_info(ctf_id)
-    return _filter_items(detail.get("challenges", []), filters)
+    challs = await api.api_ctf_challenges(ctf_id)
+    return _filter_items(challs, filters)
 
 
 async def _ctf_categories(api, ctf_id):
-    from .tuiComponents.ctf_challs import CATEGORY_NAMES
-    detail = await api.api_ctf_info(ctf_id)
+    challs = await api.api_ctf_challenges(ctf_id)
     cats = {}
-    for c in detail.get("challenges", []):
+    for c in challs:
         cid = c.get("challenge_category_id", 0)
         e = cats.setdefault(cid, {"id": cid,
-                                  "name": CATEGORY_NAMES.get(cid, f"Unknown-{cid}"),
+                                  "name": c.get("category", f"Unknown-{cid}"),
                                   "total": 0, "solved": 0})
         e["total"] += 1
         if c.get("solved"):
@@ -313,11 +377,63 @@ async def _ctf_categories(api, ctf_id):
 
 
 async def _ctf_task(api, ctf_id, task_id):
-    detail = await api.api_ctf_info(ctf_id)
-    for c in detail.get("challenges", []):
+    challs = await api.api_ctf_challenges(ctf_id)
+    for c in challs:
         if str(c.get("id")) == str(task_id):
             return c
     return {"error": f"task {task_id} not found in CTF {ctf_id}"}
+
+
+async def _setup_ctf_task(api, ctf_id, task_id):
+    detail = await api.api_ctf_info(ctf_id)
+    ctf_name = _safe(detail.get("name", f"id_{ctf_id}"))
+    start = (detail.get("starts_at") or "0000-00")[:7]
+    ctf_dir = f"{start}__{ctf_id}__{ctf_name}"
+
+    task = await _ctf_task(api, ctf_id, task_id)
+    if "error" in task:
+        return task
+
+    cat = _safe(task.get("category", "unknown"))
+    diff = _safe(task.get("difficulty", "unknown"))
+    tname = _safe(task.get("name", f"id_{task_id}"))
+    task_dir = f"{cat}_{diff}__{tname}"
+
+    path = _mksetup(os.path.join("ctfs", ctf_dir, task_dir))
+    _write_task_md(path, {**task, "category_name": task.get("category", "?")}, "challenge")
+
+    file_name = task.get("filename")
+    result = {"path": path}
+    if not file_name:
+        return result
+
+    zip_dest = os.path.join(path, file_name)
+    result["download"] = file_name
+    if not os.path.exists(zip_dest):
+        try:
+            data = await api.api_ctf_download(task_id)
+            if data:
+                with open(zip_dest, "wb") as f:
+                    f.write(data)
+                sys.stderr.write(f"[setup] downloaded {file_name}\n")
+        except Exception as e:
+            sys.stderr.write(f"[setup] download failed: {e}\n")
+            return result
+    else:
+        sys.stderr.write(f"[setup] {file_name} already exists\n")
+
+    extract_dir = os.path.join(path, "extracted")
+    if os.path.isdir(extract_dir) and os.listdir(extract_dir):
+        count = len(os.listdir(extract_dir))
+        sys.stderr.write(f"[setup] already extracted ({count} files)\n")
+        result["extracted"] = count
+    else:
+        os.makedirs(extract_dir, exist_ok=True)
+        count = _extract_zip(zip_dest, extract_dir)
+        sys.stderr.write(f"[setup] extracted {count} files\n")
+        result["extracted"] = count
+
+    return result
 
 
 def _resolve_out(out_path, default_name):
@@ -381,7 +497,7 @@ def subcommand(child_name):
     """
     def deco(fn):
         def wrapper(self, words, **kw):
-            return globals()[child_name](words, **kw).result
+            return globals()[child_name](self.api, words, **kw).result
         wrapper._subcommand = child_name
         wrapper.__name__ = getattr(fn, "__name__", child_name)
         wrapper.__doc__ = fn.__doc__
@@ -402,13 +518,14 @@ class Dispatcher:
 
     Every ``handle_*`` either is tagged ``@subcommand(child)`` (delegates to a nested
     Dispatcher) or ``@cmddoc(desc)`` and returns a ``(awaitable, shape)`` pair — the
-    ``api.<method>(...)`` coroutine (or a composite coroutine) plus a minimal-fields
+    ``self.api.<method>(...)`` coroutine (or a composite coroutine) plus a minimal-fields
     reducer (or ``None``). *words* is a mutable list consumed as it descends the tree.
     """
 
     LABEL = "cli"
 
-    def __init__(self, words, **kw):
+    def __init__(self, api: HTBSession, words, **kw):
+        self.api: HTBSession = api
         self.result = self.dispatch(words, **kw)
 
     def dispatch(self, words, **kw):
@@ -450,19 +567,19 @@ class _HtbCmd(Dispatcher):
     def handle_season(self, words, **kw): ...
 
     @cmddoc("current user info")
-    def handle_user(self, words, api, params, **kw):
+    def handle_user(self, words, params, **kw):
         def shape(d):
             i = d.get("info", {}) if isinstance(d, dict) else {}
             out = _pick(i, ["id", "name", "email", "isVip", "subscriptionType", "rank_id"])
             if isinstance(i.get("team"), dict):
                 out["team"] = i["team"].get("name")
             return out
-        return api.api_htb_user_info(params), shape
+        return self.api.api_htb_user_info(params), shape
 
     handle_me = handle_user
 
     @cmddoc("public profile by <uid>")
-    def handle_profile(self, words, api, params, **kw):
+    def handle_profile(self, words, params, **kw):
         uid = _one(words, "htb profile")
         def shape(d):
             p = d.get("profile", {}) if isinstance(d, dict) else {}
@@ -471,109 +588,109 @@ class _HtbCmd(Dispatcher):
             if isinstance(p.get("team"), dict):
                 out["team"] = p["team"].get("name")
             return out
-        return api.api_htb_profile(uid, params), shape
+        return self.api.api_htb_profile(uid, params), shape
 
     @cmddoc("currently active machine")
-    def handle_active(self, words, api, params, **kw):
+    def handle_active(self, words, params, **kw):
         def shape(d):
             info = d.get("info") if isinstance(d, dict) else None
             if not info:
                 return {"active": None}
             return _pick(info, ["id", "name", "ip", "type", "expires_at"])
-        return api.api_htb_machine_active(params), shape
+        return self.api.api_htb_machine_active(params), shape
 
     @cmddoc("raw POST <endpoint> [key=value...] [--data JSON]")
-    def handle_post(self, words, api, data_json=None, **kw):
-        return _generic_post(api, words, data_json), None
+    def handle_post(self, words, data_json=None, **kw):
+        return _generic_post(self.api, words, data_json), None
 
 
 class _ChalCmd(Dispatcher):
     LABEL = "chal"
 
     @cmddoc("list challenges [state= difficulty[]= category[]= per_page= page=]")
-    def handle_list(self, words, api, **kw):
+    def handle_list(self, words, **kw):
         kv = _split_args(words)
         def shape(d):
             fields = ["id", "name", "difficulty", "category_name", "state",
                       "solves", "is_owned", "rating", "release_date"]
             return {"challenges": [_pick(c, fields) for c in _data(d)], "meta": _meta(d)}
-        return api.api_htb_chal_list(kv), shape
+        return self.api.api_htb_chal_list(kv), shape
 
     @cmddoc("challenge info <id>")
-    def handle_info(self, words, api, params, **kw):
+    def handle_info(self, words, params, **kw):
         cid = _one(words, "chal info")
         def shape(d):
             c = d.get("challenge", {}) if isinstance(d, dict) else {}
             return _pick(c, ["id", "name", "category_name", "difficulty", "points", "solves",
                              "stars", "state", "retired", "release_date", "creator_name",
                              "download", "file_name", "file_size", "authUserSolve", "description"])
-        return api.api_htb_chal_info(cid, params), shape
+        return self.api.api_htb_chal_info(cid, params), shape
 
     @cmddoc("list challenge categories")
-    def handle_categories(self, words, api, params, **kw):
+    def handle_categories(self, words, params, **kw):
         def shape(d):
             return [_pick(c, ["id", "name"]) for c in (d.get("info", []) if isinstance(d, dict) else [])]
-        return api.api_htb_chal_categories(params), shape
+        return self.api.api_htb_chal_categories(params), shape
 
     @cmddoc("community writeups <id>")
-    def handle_writeup(self, words, api, params, **kw):
+    def handle_writeup(self, words, params, **kw):
         cid = _one(words, "chal writeup")
         def shape(d):
             off = (d.get("data", {}) or {}).get("official") if isinstance(d, dict) else None
             if isinstance(off, dict):
                 return {"official": _pick(off, ["filename", "url", "video_url"])}
             return d.get("data", d) if isinstance(d, dict) else d
-        return api.api_htb_chal_writeup(cid, params), shape
+        return self.api.api_htb_chal_writeup(cid, params), shape
 
     @cmddoc("zip download link <id> (url + expiry, no fetch)")
-    def handle_link(self, words, api, params, **kw):
+    def handle_link(self, words, params, **kw):
         cid = _one(words, "chal link")
         def shape(d):
             return _pick(d, ["url", "expires_in"]) if isinstance(d, dict) else d
-        return api.api_htb_chal_download_link(cid, params), shape
+        return self.api.api_htb_chal_download_link(cid, params), shape
 
     @cmddoc("fetch + save zip: download <id> <path>")
-    def handle_download(self, words, api, **kw):
+    def handle_download(self, words, **kw):
         cid, path = _n(words, 2, "chal download")
-        return _download_chal(api, cid, path), None
+        return _download_chal(self.api, cid, path), None
 
     @cmddoc("start challenge container <id> [--wait: poll until IP:port ready]")
-    def handle_start(self, words, api, **kw):
+    def handle_start(self, words, **kw):
         cid = _one(words, "chal start")
         if kw.get("wait"):
-            return _start_chal_wait(api, cid), None
-        return api.api_htb_chal_start(cid), _shape_action
+            return _start_chal_wait(self.api, cid), None
+        return self.api.api_htb_chal_start(cid), _shape_action
 
     @cmddoc("stop challenge container <id>")
-    def handle_stop(self, words, api, **kw):
+    def handle_stop(self, words, **kw):
         cid = _one(words, "chal stop")
-        return api.api_htb_chal_stop(cid), _shape_action
+        return self.api.api_htb_chal_stop(cid), _shape_action
 
     @cmddoc("create working dir: setup <id>")
-    def handle_setup(self, words, api, **kw):
+    def handle_setup(self, words, **kw):
         cid = _one(words, "chal setup")
-        return _setup_chal(api, cid), None
+        return _setup_chal(self.api, cid), None
 
     @cmddoc("submit flag <id> <flag>")
-    def handle_submit(self, words, api, data_json=None, **kw):
+    def handle_submit(self, words, **kw):
         cid, flag = _n(words, 2, "chal submit")
-        return api.api_htb_chal_submit(cid, flag), _shape_action
+        return self.api.api_htb_chal_submit(cid, flag), _shape_action
 
 
 class _SherlockCmd(Dispatcher):
     LABEL = "sherlock"
 
     @cmddoc("list sherlocks [per_page= page=]")
-    def handle_list(self, words, api, params, **kw):
+    def handle_list(self, words, params, **kw):
         kv = _split_args(words)
         def shape(d):
             fields = ["id", "name", "difficulty", "category_name", "state",
                       "solves", "is_owned", "progress", "rating", "release_date"]
             return {"sherlocks": [_pick(s, fields) for s in _data(d)], "meta": _meta(d)}
-        return api.api_htb_sherlock_list(_params(params, kv)), shape
+        return self.api.api_htb_sherlock_list(_params(params, kv)), shape
 
     @cmddoc("sherlock info <id>")
-    def handle_info(self, words, api, params, **kw):
+    def handle_info(self, words, params, **kw):
         sid = _one(words, "sherlock info")
         def shape(d):
             s = d.get("data", {}) if isinstance(d, dict) else {}
@@ -582,37 +699,37 @@ class _SherlockCmd(Dispatcher):
             if mods:
                 out["academyModules"] = [m.get("name") for m in mods if isinstance(m, dict)]
             return out
-        return api.api_htb_sherlock_info(sid, params), shape
+        return self.api.api_htb_sherlock_info(sid, params), shape
 
     @cmddoc("sherlock tasks <id>")
-    def handle_tasks(self, words, api, params, **kw):
+    def handle_tasks(self, words, params, **kw):
         sid = _one(words, "sherlock tasks")
         def shape(d):
             return [_pick(t, ["id", "title", "description", "completed", "masked_flag"])
                     for t in _data(d)]
-        return api.api_htb_sherlock_tasks(sid, params), shape
+        return self.api.api_htb_sherlock_tasks(sid, params), shape
 
     @cmddoc("sherlock download link <id> (url + expiry, no fetch)")
-    def handle_link(self, words, api, params, **kw):
+    def handle_link(self, words, params, **kw):
         sid = _one(words, "sherlock link")
         def shape(d):
             return _pick(d, ["url", "expires_in"]) if isinstance(d, dict) else d
-        return api.api_htb_sherlock_download_link(sid, params), shape
+        return self.api.api_htb_sherlock_download_link(sid, params), shape
 
     @cmddoc("fetch + save sherlock zip: download <id> <path>")
-    def handle_download(self, words, api, **kw):
+    def handle_download(self, words, **kw):
         sid, path = _n(words, 2, "sherlock download")
-        return _download_sherlock(api, sid, path), None
+        return _download_sherlock(self.api, sid, path), None
 
     @cmddoc("create working dir: setup <id>")
-    def handle_setup(self, words, api, **kw):
+    def handle_setup(self, words, **kw):
         sid = _one(words, "sherlock setup")
-        return _setup_sherlock(api, sid), None
+        return _setup_sherlock(self.api, sid), None
 
     @cmddoc("submit answer <sherlock-id> <task-id> <answer>")
-    def handle_submit(self, words, api, data_json=None, **kw):
+    def handle_submit(self, words, **kw):
         sid, tid, answer = _n(words, 3, "sherlock submit")
-        return api.api_htb_sherlock_submit(sid, tid, answer), _shape_action
+        return self.api.api_htb_sherlock_submit(sid, tid, answer), _shape_action
 
 
 class _MachineCmd(Dispatcher):
@@ -625,26 +742,26 @@ class _MachineCmd(Dispatcher):
         return {"machines": [_pick(m, self._MACHINE_FIELDS) for m in _data(d)], "meta": _meta(d)}
 
     @cmddoc("list active machines [per_page= page=]")
-    def handle_list(self, words, api, params, **kw):
+    def handle_list(self, words, params, **kw):
         kv = _split_args(words)
-        return api.api_htb_machine_list(_params(params, kv)), self._machine_list_shape
+        return self.api.api_htb_machine_list(_params(params, kv)), self._machine_list_shape
 
     @cmddoc("list retired machines [per_page= page=]")
-    def handle_retired(self, words, api, params, **kw):
+    def handle_retired(self, words, params, **kw):
         kv = _split_args(words)
-        return api.api_htb_machine_retired(_params(params, kv)), self._machine_list_shape
+        return self.api.api_htb_machine_retired(_params(params, kv)), self._machine_list_shape
 
     @cmddoc("currently active machine")
-    def handle_active(self, words, api, params, **kw):
+    def handle_active(self, words, params, **kw):
         def shape(d):
             info = d.get("info") if isinstance(d, dict) else None
             if not info:
                 return {"active": None}
             return _pick(info, ["id", "name", "ip", "type", "expires_at"])
-        return api.api_htb_machine_active(params), shape
+        return self.api.api_htb_machine_active(params), shape
 
     @cmddoc("machine profile <name>")
-    def handle_profile(self, words, api, params, **kw):
+    def handle_profile(self, words, params, **kw):
         name = _one(words, "machine profile")
         def shape(d):
             m = d.get("info", {}) if isinstance(d, dict) else {}
@@ -654,52 +771,52 @@ class _MachineCmd(Dispatcher):
             if isinstance(m.get("maker"), dict):
                 out["maker"] = m["maker"].get("name")
             return out
-        return api.api_htb_machine_profile(name, params), shape
+        return self.api.api_htb_machine_profile(name, params), shape
 
     handle_info = handle_profile
 
     @cmddoc("submit flag <id> <flag>")
-    def handle_submit(self, words, api, data_json=None, **kw):
+    def handle_submit(self, words, **kw):
         mid, flag = _n(words, 2, "machine submit")
-        return api.api_htb_machine_submit(mid, flag), _shape_action
+        return self.api.api_htb_machine_submit(mid, flag), _shape_action
 
     @cmddoc("create working dir: setup <name>")
-    def handle_setup(self, words, api, **kw):
+    def handle_setup(self, words, **kw):
         name = _one(words, "machine setup")
-        return _setup_machine(api, name), None
+        return _setup_machine(self.api, name), None
 
     @cmddoc("spawn/start VM by <id> [--wait: poll until IP ready]")
-    def handle_spawn(self, words, api, **kw):
+    def handle_spawn(self, words, **kw):
         mid = _one(words, "machine spawn")
         if kw.get("wait"):
-            return _spawn_machine_wait(api, mid), None
-        return api.api_htb_vm_spawn(mid), _shape_action
+            return _spawn_machine_wait(self.api, mid), None
+        return self.api.api_htb_vm_spawn(mid), _shape_action
 
     handle_start = handle_spawn
 
-    async def _resolve_mid_or_active(self, words, api):
+    async def _resolve_mid_or_active(self, words):
         if words:
             return words[0]
-        active_data = await api.api_htb_machine_active()
+        active_data = await self.api.api_htb_machine_active()
         active_info = active_data.get("info") if isinstance(active_data, dict) else None
         if active_info and "id" in active_info:
             return str(active_info["id"])
         raise ValueError("No machine ID provided and no active machine found to target.")
 
     @cmddoc("terminate/stop active VM, or <id> if specified")
-    def handle_terminate(self, words, api, **kw):
+    def handle_terminate(self, words, **kw):
         async def run():
-            mid = await self._resolve_mid_or_active(words, api)
-            return await api.api_htb_vm_terminate(mid)
+            mid = await self._resolve_mid_or_active(words)
+            return await self.api.api_htb_vm_terminate(mid)
         return run(), _shape_action
 
     handle_stop = handle_terminate
 
     @cmddoc("reset active VM, or <id> if specified")
-    def handle_reset(self, words, api, **kw):
+    def handle_reset(self, words, **kw):
         async def run():
-            mid = await self._resolve_mid_or_active(words, api)
-            return await api.api_htb_vm_reset(mid)
+            mid = await self._resolve_mid_or_active(words)
+            return await self.api.api_htb_vm_reset(mid)
         return run(), _shape_action
 
 
@@ -708,11 +825,11 @@ class _SeasonCmd(Dispatcher):
     LABEL = "season"
 
     @cmddoc("list seasons")
-    def handle_list(self, words, api, params, **kw):
+    def handle_list(self, words, params, **kw):
         def shape(d):
             return [_pick(s, ["id", "name", "state", "active", "start_date", "end_date", "players"])
                     for s in _data(d)]
-        return api.api_htb_season_list(params), shape
+        return self.api.api_htb_season_list(params), shape
 
 
 class _CtfCmd(Dispatcher):
@@ -720,25 +837,29 @@ class _CtfCmd(Dispatcher):
     _ctx_child = "_CtfCtxCmd"  # a leading numeric word -> per-CTF context (for help)
 
     def dispatch(self, words, **kw):
-        # a leading numeric word is a CTF id -> per-CTF context
         if words and words[0].isdigit():
             ctf_id = words.pop(0)
-            return _CtfCtxCmd(words, ctf_id=ctf_id, **kw).result
+            return _CtfCtxCmd(self.api, words, ctf_id=ctf_id, **kw).result
         return super().dispatch(words, **kw)
 
-    @cmddoc("list ongoing CTFs [page=N]")
-    def handle_list(self, words, api, params, **kw):
+    @cmddoc("list ongoing CTFs [page=N] [--full]")
+    def handle_list(self, words, params, full=False, **kw):
         kv = _split_args(words)
-        return api.api_ctf_list(_params(params, kv)), None
+        def shape(d):
+            if not isinstance(d, list):
+                return d
+            fields = ["id", "name", "starts_at", "canJoin"]
+            return [_pick(c, fields) for c in d]
+        return self.api.api_ctf_list(_params(params, kv)), None if full else shape
 
     @cmddoc("list past CTFs [page=N]")
-    def handle_past(self, words, api, params, **kw):
+    def handle_past(self, words, params, **kw):
         kv = _split_args(words)
-        return api.api_ctf_past(_params(params, kv)), None
+        return self.api.api_ctf_past(_params(params, kv)), None
 
     @cmddoc("raw POST <endpoint> [key=value...] [--data JSON]")
-    def handle_post(self, words, api, data_json=None, **kw):
-        return _generic_post(api, words, data_json), None
+    def handle_post(self, words, data_json=None, **kw):
+        return _generic_post(self.api, words, data_json), None
 
 
 class _CtfCtxCmd(Dispatcher):
@@ -746,46 +867,61 @@ class _CtfCtxCmd(Dispatcher):
 
     LABEL = "ctf <id>"
 
-    def default(self, api, ctf_id, params, **kw):
-        return api.api_ctf_info(ctf_id, params), None
+    def default(self, ctf_id, params, **kw):
+        def shape(d):
+            if isinstance(d, dict):
+                d.pop("challenges", None)
+            return d
+        return self.api.api_ctf_info(ctf_id, params), shape
 
     @cmddoc("CTF info (default)")
-    def handle_info(self, words, api, ctf_id, params, **kw):
-        return api.api_ctf_info(ctf_id, params), None
+    def handle_info(self, words, ctf_id, params, **kw):
+        return self.default(ctf_id=ctf_id, params=params, **kw)
 
     @cmddoc("CTF scoreboard")
-    def handle_scores(self, words, api, ctf_id, params, **kw):
-        return api.api_ctf_scores(ctf_id, params), None
+    def handle_scores(self, words, ctf_id, params, **kw):
+        return self.api.api_ctf_scores(ctf_id, params), None
 
-    @cmddoc("list tasks|categories [category= solved=]")
-    def handle_list(self, words, api, ctf_id, params, **kw):
-        what = words.pop(0) if words else None
-        if what == "tasks":
-            kv = _split_args(words)
-            return _ctf_tasks(api, ctf_id, _params(params, kv)), None
-        if what == "categories":
-            return _ctf_categories(api, ctf_id), None
-        raise ValueError("ctf <id> list: expected 'tasks' or 'categories'")
+    @cmddoc("list tasks [category= solved= difficulty=]")
+    def handle_tasks(self, words, ctf_id, params, **kw):
+        kv = _split_args(words)
+        def shape(d):
+            if not isinstance(d, list):
+                return d
+            return [_pick(c, ["id", "name", "category", "difficulty", "solved"]) for c in d]
+        return _ctf_tasks(self.api, ctf_id, _params(params, kv)), shape
+
+    @cmddoc("list categories")
+    def handle_categories(self, words, ctf_id, **kw):
+        return _ctf_categories(self.api, ctf_id), None
+
+    handle_cat = handle_categories
 
     @cmddoc("task detail <task-id>")
-    def handle_task(self, words, api, ctf_id, **kw):
+    def handle_task(self, words, ctf_id, **kw):
         tid = _one(words, "ctf task")
-        return _ctf_task(api, ctf_id, tid), None
+        return _ctf_task(self.api, ctf_id, tid), None
+
+    @cmddoc("create working dir: setup <task-id>")
+    def handle_setup(self, words, ctf_id, **kw):
+        tid = _one(words, "ctf setup")
+        return _setup_ctf_task(self.api, ctf_id, tid), None
 
     @cmddoc("submit flag <task-id> <flag>")
-    def handle_submit(self, words, api, ctf_id, data_json=None, **kw):
-        # CTF submit endpoint is not documented in this codebase; /api/flags is the
-        # common one. Override with `cli ctf post <endpoint> ...` or --data.
+    def handle_submit(self, words, ctf_id, **kw):
         tid, flag = _n(words, 2, "ctf submit")
-        extra = json.loads(data_json) if data_json else None
-        return api.api_ctf_submit(tid, flag, extra), None
+        return self.api.api_ctf_submit(tid, flag), None
 
 
 def _iter_commands(cls, prefix):
     """Explore *cls*'s ``handle_*``: descend ``@subcommand``, list ``@cmddoc`` leaves."""
+    seen = set()
     for name, fn in vars(cls).items():
         if not name.startswith("handle_"):
             continue
+        if id(fn) in seen:
+            continue
+        seen.add(id(fn))
         cmd = name[len("handle_"):]
         child = getattr(fn, "_subcommand", None)
         doc = getattr(fn, "_cmddoc", None)
@@ -823,6 +959,7 @@ def main(argv=None):
     parser.add_argument("--token", help="API token (default: HTB_TOKEN / CTF_TOKEN env)")
     parser.add_argument("--wait", action="store_true",
                         help="after spawn/start, poll until the machine or container is ready and print IP (+ ports)")
+    parser.add_argument("--full", action="store_true", help="show all fields instead of minimal summary")
     parser.add_argument("--debug", action="store_true", help="print API messages to stderr")
     parser.add_argument("words", nargs="*", help="<htb|ctf> <command...> [args] [key=value ...]")
     args = parser.parse_args(argv)
@@ -860,8 +997,9 @@ def main(argv=None):
 
     async def _run():
         try:
-            result, shape = _MainCmd(list(words), api=api, params=params,
-                                        data_json=args.data, wait=args.wait).result
+            result, shape = _MainCmd(api, list(words), params=params,
+                                        data_json=args.data, wait=args.wait,
+                                        full=args.full).result
             return await result, shape
         finally:
             await api.close()

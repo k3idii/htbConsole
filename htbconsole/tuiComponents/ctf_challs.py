@@ -366,7 +366,12 @@ class CTFChallengesView(Container):
             self.app.notify("Select a challenge and enter a flag", severity="warning")
             return
         self.app.post_message(EventMsg(f"CTF::SubmitFlag chall={chall_id} flag={flag}"))
-        self.app.notify("Flag submission via API not supported — use web UI", severity="warning")
+        try:
+            resp = await self.app.CTF_API.api_ctf_submit(chall_id, flag)
+            msg = resp.get("message", str(resp)) if isinstance(resp, dict) else str(resp)
+            self.app.notify(msg, severity="information")
+        except Exception as e:
+            self.app.notify(f"Submit failed: {e}", severity="error")
         inp.value = ""
 
     @on(Button.Pressed, "#ctf_create_dirs_btn")

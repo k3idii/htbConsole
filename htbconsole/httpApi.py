@@ -361,8 +361,20 @@ class HTBCTFSession(HTBSession):
 
   # --- named API calls ------------------------------------------------------
 
+  _CTF_LIST_KEYS = {
+      "id", "name", "status", "starts_at", "ends_at",
+      "canPlay", "canJoin", "canManage", "hasJoined", "isInvited",
+      "joinedTeam", "joinedTeamAvatar", "membersJoined",
+      "participating_team",
+      "slug", "format", "team_size", "team_mode",
+      "players", "max_participants", "mcp_access_mode", "private",
+  }
+
   async def api_ctf_list(self, params=None, **kw):
-    return await self.async_get("/api/ctfs", params=params, **kw)
+    raw = await self.async_get("/api/ctfs", params=params, **kw)
+    if isinstance(raw, list):
+      return [{k: c[k] for k in self._CTF_LIST_KEYS if k in c} for c in raw]
+    return raw
 
   async def api_ctf_past(self, params=None, **kw):
     return await self.async_get("/api/ctfs/past", params=params, **kw)
@@ -370,14 +382,21 @@ class HTBCTFSession(HTBSession):
   async def api_ctf_info(self, ctf_id, params=None, **kw):
     return await self.async_get(f"/api/ctfs/{ctf_id}", params=params, **kw)
 
+  async def api_ctf_challenges(self, ctf_id, **kw):
+    detail = await self.api_ctf_info(ctf_id, **kw)
+    from .tuiComponents.ctf_challs import CATEGORY_NAMES
+    challs = detail.get("challenges", [])
+    for c in challs:
+      cid = c.get("challenge_category_id", 0)
+      c["category"] = CATEGORY_NAMES.get(cid, f"Unknown-{cid}")
+    return challs
+
   async def api_ctf_scores(self, ctf_id, params=None, **kw):
     return await self.async_get(f"/api/ctfs/scores/{ctf_id}", params=params, **kw)
 
   async def api_ctf_download(self, chall_id):
     return await self.download_bytes(f"/api/challenges/{chall_id}/download")
 
-  async def api_ctf_submit(self, task_id, flag, extra=None):
+  async def api_ctf_submit(self, task_id, flag):
     body = {"challenge_id": _maybe_int(task_id), "flag": flag}
-    if extra:
-      body.update(extra)
-    return await self.async_post("/api/flags", body)
+    return await self.async_post("/api/flags/own", body)
