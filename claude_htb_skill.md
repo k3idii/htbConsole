@@ -111,6 +111,7 @@ ctf <id> scores                   # scoreboard
 
 ```bash
 ctf <id> categories               # category summary (id, name, total, solved)
+ctf <id> categories --full        # categories + challenge list per category (id, name, difficulty, solved, points)
 ctf <id> cat                      # alias for categories
 ctf <id> tasks                    # all tasks (id, name, category, difficulty, solved)
 # Filters : category=[Web,...]  solved=false - unsolved only, difficulty=[easy,medium,hard,insane] 

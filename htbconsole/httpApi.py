@@ -391,6 +391,9 @@ class HTBCTFSession(HTBSession):
       c["category"] = CATEGORY_NAMES.get(cid, f"Unknown-{cid}")
     return challs
 
+  async def api_ctf_categories(self, **kw):
+    return await self.async_get("/api/public/challenge-categories", **kw)
+
   async def api_ctf_scores(self, ctf_id, params=None, **kw):
     return await self.async_get(f"/api/ctfs/scores/{ctf_id}", params=params, **kw)
 

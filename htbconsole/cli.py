@@ -362,18 +362,28 @@ async def _ctf_tasks(api, ctf_id, filters):
     return _filter_items(challs, filters)
 
 
-async def _ctf_categories(api, ctf_id):
+async def _ctf_categories(api, ctf_id, full=False):
+    cats_raw = await api.api_ctf_categories()
+    cat_map = {}
+    if isinstance(cats_raw, list):
+        for cat in cats_raw:
+            cid = cat.get("id", 0)
+            cat_map[cid] = {"id": cid, "name": cat.get("name", f"Unknown-{cid}"),
+                            "total": 0, "solved": 0}
     challs = await api.api_ctf_challenges(ctf_id)
-    cats = {}
     for c in challs:
         cid = c.get("challenge_category_id", 0)
-        e = cats.setdefault(cid, {"id": cid,
-                                  "name": c.get("category", f"Unknown-{cid}"),
-                                  "total": 0, "solved": 0})
+        e = cat_map.setdefault(cid, {"id": cid,
+                                     "name": c.get("category", f"Unknown-{cid}"),
+                                     "total": 0, "solved": 0})
         e["total"] += 1
         if c.get("solved"):
             e["solved"] += 1
-    return sorted(cats.values(), key=lambda x: x["name"])
+        if full:
+            e.setdefault("challenges", []).append(
+                _pick(c, ["id", "name", "difficulty", "solved", "points"]))
+    used = [v for v in cat_map.values() if v["total"] > 0]
+    return sorted(used, key=lambda x: x["name"])
 
 
 async def _ctf_task(api, ctf_id, task_id):
@@ -914,9 +924,9 @@ class _CtfCtxCmd(Dispatcher):
             return [_pick(c, ["id", "name", "category", "difficulty", "solved"]) for c in d]
         return _ctf_tasks(self.api, ctf_id, _params(params, kv)), shape
 
-    @cmddoc("list categories")
-    def handle_categories(self, words, ctf_id, **kw):
-        return _ctf_categories(self.api, ctf_id), None
+    @cmddoc("list categories [--full]")
+    def handle_categories(self, words, ctf_id, full=False, **kw):
+        return _ctf_categories(self.api, ctf_id, full=full), None
 
     handle_cat = handle_categories
 
