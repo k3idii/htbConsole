@@ -40,11 +40,11 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import sys
 
 from .appSettings import HTBSettings, CTFSettings
 from .httpApi import HTBSession, HTBApiSession, HTBCTFSession
+from .paths import _safe, _path_for_ctf, _path_for_task
 
 TOKEN_ENV = {"htb": "HTB_TOKEN", "ctf": "CTF_TOKEN"}
 
@@ -98,13 +98,6 @@ def _shape_action(d):
 
 
 # --- directory setup helpers ------------------------------------------------
-
-_SAFE_RE = re.compile(r'[^a-z0-9]')
-
-
-def _safe(name):
-    return _SAFE_RE.sub('_', name.lower()).strip('_')
-
 
 def _mksetup(path):
     os.makedirs(path, exist_ok=True)
@@ -419,20 +412,12 @@ async def _start_ctf_task_wait(api, ctf_id, task_id):
 
 async def _setup_ctf_task(api, ctf_id, task_id):
     detail = await api.api_ctf_info(ctf_id)
-    ctf_name = _safe(detail.get("name", f"id_{ctf_id}"))
-    start = (detail.get("starts_at") or "0000-00")[:7]
-    ctf_dir = f"{start}__{ctf_id}__{ctf_name}"
 
     task = await _ctf_task(api, ctf_id, task_id)
     if "error" in task:
         return task
 
-    cat = _safe(task.get("category", "unknown"))
-    diff = _safe(task.get("difficulty", "unknown"))
-    tname = _safe(task.get("name", f"id_{task_id}"))
-    task_dir = f"{cat}_{diff}__{tname}"
-
-    path = _mksetup(os.path.join("ctfs", ctf_dir, task_dir))
+    path = _mksetup(_path_for_task(".", detail, task))
     _write_task_md(path, {**task, "category_name": task.get("category", "?")}, "challenge")
 
     file_name = task.get("filename")
@@ -890,6 +875,15 @@ class _CtfCmd(Dispatcher):
         kv = _split_args(words)
         return self.api.api_ctf_past(_params(params, kv)), None
 
+    @cmddoc("your CTF user profile")
+    def handle_profile(self, words, **kw):
+        def shape(d):
+            if not isinstance(d, dict):
+                return d
+            return _pick(d, ["id", "name", "email", "team_id", "avatar",
+                             "country_code", "rank", "points", "role"])
+        return self.api.api_ctf_user_profile(), shape
+
     @cmddoc("raw POST <endpoint> [key=value...] [--data JSON]")
     def handle_post(self, words, data_json=None, **kw):
         return _generic_post(self.api, words, data_json), None
@@ -956,6 +950,23 @@ class _CtfCtxCmd(Dispatcher):
     def handle_submit(self, words, ctf_id, **kw):
         tid, flag = _n(words, 2, "ctf submit")
         return self.api.api_ctf_submit(tid, flag), None
+
+    @cmddoc("assign user to task <task-id> [user-id] (default: you)")
+    def handle_assign(self, words, ctf_id, **kw):
+        if len(words) == 2:
+            tid, uid = words
+        elif len(words) == 1:
+            tid = words[0]
+            async def _resolve():
+                profile = await self.api.api_ctf_user_profile()
+                uid = profile.get("id")
+                if not uid:
+                    raise ValueError("ctf assign: cannot resolve your user id from profile")
+                return await self.api.api_ctf_challenge_associate(tid, uid)
+            return _resolve(), _shape_action
+        else:
+            raise ValueError(f"ctf assign: needs 1-2 arg(s), got {len(words)}")
+        return self.api.api_ctf_challenge_associate(tid, uid), _shape_action
 
 
 def _iter_commands(cls, prefix):

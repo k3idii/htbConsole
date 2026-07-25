@@ -233,6 +233,21 @@ class CTFListView(Container):
             info = Table.grid(expand=True)
             info.add_column(ratio=1)
             info.add_column(ratio=1)
+
+            try:
+                profile = await self.app.CTF_API.api_ctf_user_profile()
+                self.app._ctf_profile = profile
+                name = profile.get('name', '?')
+                uid = profile.get('id', '?')
+                rank = profile.get('rank', '-')
+                team = profile.get('team', {})
+                team_name = team.get('name', '-') if isinstance(team, dict) else str(team or '-')
+                info.add_row(f"[b #9fef00]{name}[/] (id:{uid})", f"Rank: {rank}")
+                info.add_row(f"Team: {team_name}", "")
+                info.add_row("", "")
+            except Exception:
+                self.app._ctf_profile = {}
+
             info.add_row(f"Total: {len(ctfs)}", f"Ongoing: {len(ongoing)}")
             info.add_row(f"Upcoming: {len(upcoming)}", "")
             self.query_one("#ctf_player_info").update(info)

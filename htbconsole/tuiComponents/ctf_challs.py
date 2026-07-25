@@ -1,5 +1,4 @@
 import os
-import re
 
 from textual import on
 from textual.app import ComposeResult
@@ -16,6 +15,7 @@ from .messages import DebugMsg, ErrorMsg, EventMsg
 from .downloader import execute_unpack
 from .notes_editor import NotesEditor
 from .confirm_dir import ensure_task_dir
+from ..paths import _path_for_ctf, _path_for_task
 
 
 CATEGORY_NAMES = {
@@ -27,22 +27,13 @@ CATEGORY_NAMES = {
 }
 
 
-def _safe_dirname(name):
-    return re.sub(r'[^\w\-. ]+', '_', name).strip('_. ')
-
-
-def _ctf_base_dir(workdir, ctf_detail):
-    start = (ctf_detail.get('starts_at') or '0000-00-00')[:10]
-    ctf_id = ctf_detail.get('id', 0)
-    return os.path.join(workdir, f"CTF_{start}__{ctf_id}")
-
-
-def _task_dir(workdir, ctf_detail, chall):
-    base = _ctf_base_dir(workdir, ctf_detail)
-    cat_id = chall.get('challenge_category_id', 0)
-    cat_name = _safe_dirname(CATEGORY_NAMES.get(cat_id, f"Unknown-{cat_id}"))
-    task_name = _safe_dirname(chall.get('name', f"task_{chall['id']}"))
-    return os.path.join(base, cat_name, f"{chall['id']}__{task_name}")
+def _assigned_names(chall):
+    users = chall.get('associated_users') or chall.get('assigned_users') or []
+    if not isinstance(users, list):
+        return ""
+    names = [u.get('name') or u.get('username') or str(u.get('id', '?'))
+             for u in users if isinstance(u, dict)]
+    return ", ".join(names)
 
 
 class ConfirmDirsScreen(ModalScreen):
@@ -98,6 +89,7 @@ class CTFChallengesView(Container):
                                     yield Markdown(id="ctf_chall_detail")
                                 with Horizontal(id="ctf_action_buttons"):
                                     yield Button("Download", id="ctf_download_btn", variant="primary")
+                                    yield Button("Assign to me", id="ctf_assign_btn")
                                 with Horizontal(id="ctf_flag_container"):
                                     yield Input(placeholder="Flag...", id="ctf_flag_input")
                                     yield Button("Submit", id="ctf_flag_submit")
@@ -125,6 +117,7 @@ class CTFChallengesView(Container):
         chall_dt.add_column(label="Diff")
         chall_dt.add_column(label="Pts")
         chall_dt.add_column(label="Done")
+        chall_dt.add_column(label="Assigned")
 
         rank_dt = self.query_one("#ctf_ranking_table", DataTable)
         rank_dt.show_header = True
@@ -155,6 +148,17 @@ class CTFChallengesView(Container):
             challenges = detail.get('challenges', [])
             self.app._ctf_challenges = {c['id']: c for c in challenges}
 
+            try:
+                api_cats = await self.app.CTF_API.api_ctf_categories(cache_this=True)
+                if isinstance(api_cats, list):
+                    for cat in api_cats:
+                        cid = cat.get('id')
+                        cname = cat.get('name')
+                        if cid and cname:
+                            CATEGORY_NAMES[cid] = cname
+            except Exception:
+                pass
+
             team = detail.get('participating_team') or {}
             solved = sum(1 for c in challenges if c.get('solved'))
 
@@ -178,13 +182,14 @@ class CTFChallengesView(Container):
             gt.add_row("MCP", detail.get('mcp_access_mode', '-'))
             gt.add_row("AI Policy", str(detail.get('ai_usage_policy') or '-'))
             gt.add_row("", "")
-            gt.add_row("[b]Workdir", _ctf_base_dir(self.app.settings.workdir, detail))
+            gt.add_row("[b]Workdir", _path_for_ctf(self.app.settings.workdir, detail))
             self.query_one("#ctf_general_info").update(gt)
 
             cats = {}
             for c in challenges:
                 cat_id = c.get('challenge_category_id', 0)
                 cat_name = CATEGORY_NAMES.get(cat_id, f"Unknown-{cat_id}")
+                c.setdefault('category', cat_name)
                 if cat_id not in cats:
                     cats[cat_id] = {'name': cat_name, 'total': 0, 'solved': 0, 'challenges': []}
                 cats[cat_id]['total'] += 1
@@ -279,6 +284,14 @@ class CTFChallengesView(Container):
             dl_btn.disabled = True
             dl_btn.label = "Download"
 
+        assign_btn = self.query_one("#ctf_assign_btn", Button)
+        assign_btn.disabled = not self._selected_chall
+        if self._selected_chall:
+            assigned = _assigned_names(self._selected_chall)
+            assign_btn.label = f"Assigned: {assigned}" if assigned else "Assign to me"
+        else:
+            assign_btn.label = "Assign to me"
+
     @on(DataTable.RowSelected, "#ctf_cat_table")
     def cat_selected(self, event):
         cat = self.app._ctf_cats.get(event.row_key.value, {})
@@ -289,6 +302,7 @@ class CTFChallengesView(Container):
                 c['name'], c.get('difficulty', '?'),
                 str(c.get('points', 0)),
                 "✅" if c.get('solved') else "❌",
+                _assigned_names(c) or "-",
                 key=c['id'],
             )
 
@@ -306,7 +320,7 @@ class CTFChallengesView(Container):
 
         ctf = self.app._current_ctf
         if ctf:
-            tdir = _task_dir(self.app.settings.workdir, ctf, chall)
+            tdir = _path_for_task(self.app.settings.workdir, ctf, chall)
             self._current_task_dir = tdir
             ensure_task_dir(self.app, tdir, self._on_chall_dir_ready)
 
@@ -328,6 +342,10 @@ class CTFChallengesView(Container):
         if chall.get('solved'):
             text += "> ✅ **SOLVED**\n\n"
 
+        assigned = _assigned_names(chall)
+        if assigned:
+            text += f"**Assigned:** {assigned}\n\n"
+
         text += f"{chall.get('description', '*No description*')}\n\n"
         text += "---\n\n"
 
@@ -345,7 +363,7 @@ class CTFChallengesView(Container):
 
         ctf = self.app._current_ctf
         if ctf:
-            tdir = _task_dir(self.app.settings.workdir, ctf, chall)
+            tdir = _path_for_task(self.app.settings.workdir, ctf, chall)
             text += f"**Local dir:** `{tdir}`\n\n"
 
         flags_info = chall.get('flagsInfo', [])
@@ -381,7 +399,7 @@ class CTFChallengesView(Container):
             self.app.notify("No CTF loaded", severity="warning")
             return
         challenges = ctf.get('challenges', [])
-        base = _ctf_base_dir(self.app.settings.workdir, ctf)
+        base = _path_for_ctf(self.app.settings.workdir, ctf)
         self.app.push_screen(
             ConfirmDirsScreen(base, len(challenges)),
             self._on_confirm_dirs,
@@ -394,12 +412,49 @@ class CTFChallengesView(Container):
         challenges = ctf.get('challenges', [])
         created = 0
         for chall in challenges:
-            tdir = _task_dir(self.app.settings.workdir, ctf, chall)
+            tdir = _path_for_task(self.app.settings.workdir, ctf, chall)
             if not os.path.exists(tdir):
                 os.makedirs(tdir, exist_ok=True)
                 created += 1
         self.app.post_message(EventMsg(f"Created {created} task directories (total: {len(challenges)})"))
         self.app.notify(f"Created {created} directories", severity="information")
+
+    @on(Button.Pressed, "#ctf_assign_btn")
+    def assign_pressed(self, event):
+        chall = self._selected_chall
+        if not chall:
+            self.app.notify("Select a challenge first", severity="warning")
+            return
+        profile = getattr(self.app, '_ctf_profile', {})
+        uid = profile.get('id')
+        if not uid:
+            self.app.notify("Profile not loaded — cannot assign", severity="error")
+            return
+        self.run_worker(self._bg_assign(chall['id'], uid))
+
+    async def _bg_assign(self, task_id, user_id):
+        try:
+            resp = await self.app.CTF_API.api_ctf_challenge_associate(task_id, user_id)
+            msg = resp.get("message", str(resp)) if isinstance(resp, dict) else str(resp)
+            self.app.notify(f"Assign: {msg}", severity="information")
+            self.app.post_message(EventMsg(f"Assigned user {user_id} to task {task_id}"))
+            ctf = self.app._current_ctf
+            if ctf:
+                detail = await self.app.CTF_API.api_ctf_info(ctf['id'], cache_this=0)
+                challenges = detail.get('challenges', [])
+                self.app._ctf_challenges = {c['id']: c for c in challenges}
+                self.app._current_ctf = detail
+                updated = self.app._ctf_challenges.get(task_id)
+                if updated:
+                    self._selected_chall = updated
+                    self._render_detail(updated)
+                    self._update_action_buttons()
+                for cat_id, cat in self.app._ctf_cats.items():
+                    cat['challenges'] = [self.app._ctf_challenges.get(c['id'], c)
+                                         for c in cat['challenges']]
+        except Exception as e:
+            self.app.notify(f"Assign failed: {e}", severity="error")
+            self.app.post_message(ErrorMsg(e))
 
     @on(Button.Pressed, "#ctf_download_btn")
     def download_pressed(self, event):
@@ -417,7 +472,7 @@ class CTFChallengesView(Container):
             ctf_id = ctf['id']
             chall_id = chall['id']
             filename = chall.get('filename', 'task.zip')
-            tdir = getattr(self, '_current_task_dir', None) or _task_dir(self.app.settings.workdir, ctf, chall)
+            tdir = getattr(self, '_current_task_dir', None) or _path_for_task(self.app.settings.workdir, ctf, chall)
             os.makedirs(tdir, exist_ok=True)
             out_file = os.path.join(tdir, filename)
 

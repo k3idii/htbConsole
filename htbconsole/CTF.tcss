@@ -163,6 +163,14 @@ Header {
                     border-bottom: tall $border;
                     color: $color 50%;
                 }
+
+                #ctf_assign_btn {
+                    width: 1fr;
+                    background: $border;
+                    color: $color;
+                    border-top: tall $border;
+                    border-bottom: tall $border;
+                }
             }
 
             #ctf_flag_container {

@@ -37,7 +37,7 @@ class HTBSession:
 
   REQUEST_TIMEOUT = 15
   DOWNLOAD_TIMEOUT = 60
-  USE_CACHE = True # jsut in case you want to globally disable that 
+  USE_CACHE = False
 
   def __init__(self, token: str, cache_file: str = None) -> None:
     self.token = token
@@ -385,6 +385,16 @@ class HTBCTFSession(HTBSession):
   async def api_ctf_challenges(self, ctf_id, **kw):
     detail = await self.api_ctf_info(ctf_id, **kw)
     from .tuiComponents.ctf_challs import CATEGORY_NAMES
+    try:
+      api_cats = await self.api_ctf_categories(cache_this=True)
+      if isinstance(api_cats, list):
+        for cat in api_cats:
+          cid = cat.get("id")
+          cname = cat.get("name")
+          if cid and cname:
+            CATEGORY_NAMES[cid] = cname
+    except Exception:
+      pass
     challs = detail.get("challenges", [])
     for c in challs:
       cid = c.get("challenge_category_id", 0)
@@ -409,3 +419,9 @@ class HTBCTFSession(HTBSession):
   async def api_ctf_submit(self, task_id, flag):
     body = {"challenge_id": _maybe_int(task_id), "flag": flag}
     return await self.async_post("/api/flags/own", body)
+
+  async def api_ctf_user_profile(self, **kw):
+    return await self.async_get("/api/users/profile", cache_this=0, **kw)
+
+  async def api_ctf_challenge_associate(self, task_id, user_id):
+    return await self.async_get(f"/api/challenges/{_maybe_int(task_id)}/associate/{_maybe_int(user_id)}", cache_this=0)

@@ -118,6 +118,17 @@ ctf <id> tasks                    # all tasks (id, name, category, difficulty, s
 ctf <id> task <task-id>           # full task detail
 ```
 
+### Player Profile & Assignment
+
+```bash
+ctf profile                           # your CTF user profile (id, name, rank, team, etc.)
+ctf <id> assign <task-id> [user-id]    # assign a player to a task (default: you)
+# API: GET /api/challenges/{task-id}/associate/{user-id}
+```
+
+Omit user-id to assign yourself (fetches your ID from `ctf profile` automatically).
+In the TUI, "Assign to me" button on task detail does the same using cached profile.
+
 ### Solve
 
 ```bash

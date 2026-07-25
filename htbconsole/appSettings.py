@@ -43,7 +43,7 @@ DEFAULT_CUSTOM_ACTIONS = """\
 """
 
 ENV_OVERRIDES = {
-    "HTB_WORKDIR": "workdir",
+    "HTB_WORKDIR": "WORKDIR",
     "USE_BURP":    "burp_proxy",
 }
 
@@ -52,7 +52,7 @@ ENV_OVERRIDES = {
 class BaseSettings:
     YAML_KEY: str = field(init=False, repr=False, default="")
 
-    workdir: str = "./work"
+    workdir: str = "./WORKDIR"
     zip_password: str = "hackthebox"
     unpack_cmd: str = "7z -o./unpacked/ -p{password} x {file}"
     auto_create_dir: bool = True
