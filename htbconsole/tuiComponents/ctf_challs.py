@@ -15,7 +15,7 @@ from .messages import DebugMsg, ErrorMsg, EventMsg
 from .downloader import execute_unpack
 from .notes_editor import NotesEditor
 from .confirm_dir import ensure_task_dir
-from ..paths import _path_for_ctf, _path_for_task
+from ..paths import _path_for_ctf, _path_for_ctf_task
 
 
 CATEGORY_NAMES = {
@@ -320,7 +320,7 @@ class CTFChallengesView(Container):
 
         ctf = self.app._current_ctf
         if ctf:
-            tdir = _path_for_task(self.app.settings.workdir, ctf, chall)
+            tdir = _path_for_ctf_task(self.app.settings.workdir, ctf, chall)
             self._current_task_dir = tdir
             ensure_task_dir(self.app, tdir, self._on_chall_dir_ready)
 
@@ -363,7 +363,7 @@ class CTFChallengesView(Container):
 
         ctf = self.app._current_ctf
         if ctf:
-            tdir = _path_for_task(self.app.settings.workdir, ctf, chall)
+            tdir = _path_for_ctf_task(self.app.settings.workdir, ctf, chall)
             text += f"**Local dir:** `{tdir}`\n\n"
 
         flags_info = chall.get('flagsInfo', [])
@@ -412,7 +412,7 @@ class CTFChallengesView(Container):
         challenges = ctf.get('challenges', [])
         created = 0
         for chall in challenges:
-            tdir = _path_for_task(self.app.settings.workdir, ctf, chall)
+            tdir = _path_for_ctf_task(self.app.settings.workdir, ctf, chall)
             if not os.path.exists(tdir):
                 os.makedirs(tdir, exist_ok=True)
                 created += 1
@@ -472,7 +472,7 @@ class CTFChallengesView(Container):
             ctf_id = ctf['id']
             chall_id = chall['id']
             filename = chall.get('filename', 'task.zip')
-            tdir = getattr(self, '_current_task_dir', None) or _path_for_task(self.app.settings.workdir, ctf, chall)
+            tdir = getattr(self, '_current_task_dir', None) or _path_for_ctf_task(self.app.settings.workdir, ctf, chall)
             os.makedirs(tdir, exist_ok=True)
             out_file = os.path.join(tdir, filename)
 

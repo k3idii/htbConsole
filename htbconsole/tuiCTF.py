@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from textual import on
 from textual.binding import Binding
@@ -29,6 +30,8 @@ class CTFApp(App):
 
     SCREENS = {"log": LogScreen}
 
+    _LOG_FILE = "ctf_logs.txt"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._ctf_cache = {}
@@ -37,6 +40,7 @@ class CTFApp(App):
         self._ctf_cats = {}
         self._log_buffer = []
         self._log_visible = False
+        self._log_fh = None
 
     def action_logs(self):
         if isinstance(self.screen, LogScreen):
@@ -78,11 +82,24 @@ class CTFApp(App):
         session._handle_notify = self.api_notify
         return session
 
+    def _log_to_file(self, message):
+        if not self.settings.save_logs:
+            return
+        try:
+            if not self._log_fh:
+                self._log_fh = open(self._LOG_FILE, "a", encoding="utf-8")
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._log_fh.write(f"[{ts}] {message}\n")
+            self._log_fh.flush()
+        except Exception:
+            pass
+
     @on(DebugMsg)
     @on(EventMsg)
     @on(ErrorMsg)
     def log_messages(self, message: SelfFormattingMsg) -> None:
         self._log_buffer.append(message)
+        self._log_to_file(message)
         if self._log_visible:
             try:
                 self.screen.query_one("#log", RichLog).write(message)
@@ -128,6 +145,9 @@ class CTFApp(App):
 
     async def on_unmount(self):
         self.settings.save()
+        if self._log_fh:
+            self._log_fh.close()
+            self._log_fh = None
         await self.CTF_API.close()
 
 

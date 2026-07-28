@@ -56,6 +56,7 @@ class BaseSettings:
     zip_password: str = "hackthebox"
     unpack_cmd: str = "7z -o./unpacked/ -p{password} x {file}"
     auto_create_dir: bool = True
+    save_logs: bool = True
 
     @classmethod
     def load(cls):

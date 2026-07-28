@@ -2,7 +2,6 @@
 
 from textual import system_commands
 from textual import system_commands
-import re 
 import os
 
 from textual.widgets import DataTable
@@ -19,6 +18,7 @@ from .messages import DebugMsg, ErrorMsg, EventMsg
 from .downloader import async_download_and_extract, execute_shell
 from .notes_editor import NotesEditor
 from .confirm_dir import ensure_task_dir
+from ..paths import _path_for_challenge
 
 import jinja2
 from urllib.parse import quote as _urlquote
@@ -138,14 +138,6 @@ chall_state_options = [
   ("Retired (free)", "retired_free"),
 ]
 
-pattern1 = re.compile('[^0-9a-zA-Z_]+')
-
-def make_dirname(chall, workdir):
-  clean = lambda s: pattern1.sub('',s.lower())
-  cat  = clean(chall['category_name'])
-  dif  = clean(chall['difficulty'])
-  name = clean(chall['name'])
-  return os.path.join(workdir, 'challenges', cat, f"{dif}__{name}")
 
 
 class FlagAcceptedScreen(ModalScreen):
@@ -290,7 +282,7 @@ class ChallDetails(Container):
       data = data['challenge']
       self.chall_data = data
       workdir = self.app.settings.workdir
-      self.chall_data['local_dir_name'] = make_dirname(self.chall_data, workdir)
+      self.chall_data['local_dir_name'] = _path_for_challenge(workdir, self.chall_data)
       self.chall_data['real_dir_name'] = os.path.abspath(self.chall_data['local_dir_name'])
 
       ensure_task_dir(self.app, self.chall_data['real_dir_name'], self._finish_reload_panel)
@@ -421,7 +413,7 @@ class ChallDetails(Container):
       if url:
         self.app.post_message(EventMsg(f"Official writeup: {url}"))
         self.app.notify(f"Official PDF: {url}", timeout=8)
-        from .downloader import async_download
+        from ..httpApi import async_download
         workdir = self.app.settings.workdir
         out_dir = os.path.join(workdir, 'writeups')
         os.makedirs(out_dir, exist_ok=True)

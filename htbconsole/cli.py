@@ -26,10 +26,12 @@ HTB submit flag:
 
 CTF:
     htbconsole cli ctf list
+    htbconsole cli ctf profile
     htbconsole cli ctf 1434 info
-    htbconsole cli ctf 1434 list categories
-    htbconsole cli ctf 1434 list tasks category=Web solved=false
+    htbconsole cli ctf 1434 categories
+    htbconsole cli ctf 1434 tasks category=Web solved=false
     htbconsole cli ctf 1434 task 9876
+    htbconsole cli ctf 1434 assign 9876
     htbconsole cli ctf 1434 submit 9876 HTB{...}
 
 Generic escape hatch (raw POST, any endpoint):
@@ -43,8 +45,9 @@ import os
 import sys
 
 from .appSettings import HTBSettings, CTFSettings
-from .httpApi import HTBSession, HTBApiSession, HTBCTFSession
-from .paths import _safe, _path_for_ctf, _path_for_task
+from .httpApi import HTBSession, HTBApiSession, HTBCTFSession, async_download
+from .paths import (_path_for_ctf_task,
+                    _path_for_challenge, _path_for_machine, _path_for_sherlock)
 
 TOKEN_ENV = {"htb": "HTB_TOKEN", "ctf": "CTF_TOKEN"}
 
@@ -158,6 +161,9 @@ def _write_task_md(path, info, kind):
         lines.append(f"- **Rating**: {info.get('rating', '?')}")
         lines.append(f"- **State**: {info.get('state', '?')}")
 
+    else:
+        raise ValueError(f"_write_task_md: unknown kind {kind!r}")
+
     text = "\n".join(lines) + "\n"
     with open(dest, "w") as f:
         f.write(text)
@@ -165,26 +171,64 @@ def _write_task_md(path, info, kind):
     return dest
 
 
-def _extract_zip(zip_path, dest_dir):
+_DEFAULT_ZIP_PASSWORDS = [None, b"hackthebox", b"hacktheblue"]
+
+
+def _zip_passwords(extra=None):
+    """Build password list: defaults + optional settings password (deduplicated)."""
+    pws = list(_DEFAULT_ZIP_PASSWORDS)
+    if extra:
+        b = extra.encode() if isinstance(extra, str) else extra
+        if b not in pws:
+            pws.append(b)
+    return pws
+
+
+def _extract_zip(zip_path, dest_dir, passwords=None):
     import zipfile
-    passwords = [None, b"hackthebox", b"hacktheblue"]
+    pws = passwords or _DEFAULT_ZIP_PASSWORDS
     with zipfile.ZipFile(zip_path, "r") as zf:
-        for pwd in passwords:
+        for pwd in pws:
             try:
                 zf.extractall(dest_dir, pwd=pwd)
                 return len(zf.namelist())
-            except (RuntimeError, Exception):
+            except Exception:
                 continue
-    raise RuntimeError(f"Cannot extract {zip_path} — tried passwords: none, hackthebox, hacktheblue")
+    tried = ", ".join(str(p) for p in pws)
+    raise RuntimeError(f"Cannot extract {zip_path} — tried passwords: {tried}")
 
 
-async def _setup_chal(api, chal_id):
+def _try_extract(zip_dest, extract_dir, passwords=None):
+    """Extract *zip_dest* into *extract_dir*. Returns file count (0 on failure)."""
+    if os.path.isdir(extract_dir) and os.listdir(extract_dir):
+        count = len(os.listdir(extract_dir))
+        sys.stderr.write(f"[setup] already extracted ({count} files)\n")
+        return count
+    os.makedirs(extract_dir, exist_ok=True)
+    try:
+        count = _extract_zip(zip_dest, extract_dir, passwords=passwords)
+        sys.stderr.write(f"[setup] extracted {count} files\n")
+        return count
+    except Exception as e:
+        sys.stderr.write(f"[setup] extraction failed: {e}\n")
+        return 0
+
+
+async def _download_and_extract(url, zip_dest, extract_dir, headers=None, passwords=None):
+    """Download *url* to *zip_dest*, then extract. Returns ``(file_name, count)``."""
+    file_name = os.path.basename(zip_dest)
+    if not os.path.exists(zip_dest):
+        await async_download(url, zip_dest, headers=headers)
+        sys.stderr.write(f"[setup] downloaded {file_name}\n")
+    else:
+        sys.stderr.write(f"[setup] {file_name} already exists\n")
+    return file_name, _try_extract(zip_dest, extract_dir, passwords=passwords)
+
+
+async def _setup_chal(api, chal_id, workdir=".", zip_password=None):
     data = await api.api_htb_chal_info(chal_id)
     c = data.get("challenge", {}) if isinstance(data, dict) else {}
-    name = _safe(c.get("name", f"id_{chal_id}"))
-    cat = _safe(c.get("category_name", "unknown"))
-    diff = _safe(c.get("difficulty", "unknown"))
-    path = _mksetup(os.path.join("challenges", cat, f"{diff}__{name}"))
+    path = _mksetup(_path_for_challenge(workdir, c))
     _write_task_md(path, c, "challenge")
     result = {"path": path}
 
@@ -196,68 +240,66 @@ async def _setup_chal(api, chal_id):
 
     file_name = c.get("file_name") or f"challenge_{chal_id}.zip"
     zip_dest = os.path.join(path, file_name)
+
+    dl_data = await api.api_htb_chal_download_link(chal_id)
+    url = dl_data.get("url") if isinstance(dl_data, dict) else None
+    if not url:
+        sys.stderr.write(f"[setup] no download url available\n")
+        result["download"] = file_name
+        result["extracted"] = 0
+        return result
+
+    pws = _zip_passwords(zip_password)
+    _, count = await _download_and_extract(url, zip_dest, os.path.join(path, "extracted"),
+                                           headers=api.headers, passwords=pws)
     result["download"] = file_name
-
-    if not os.path.exists(zip_dest):
-        dl_data = await api.api_htb_chal_download_link(chal_id)
-        url = dl_data.get("url") if isinstance(dl_data, dict) else None
-        if url:
-            from .tuiComponents.downloader import async_download
-            await async_download(url, zip_dest, headers=api.headers)
-            sys.stderr.write(f"[setup] downloaded {file_name}\n")
-        else:
-            sys.stderr.write(f"[setup] no download url available\n")
-            result["extracted"] = 0
-            return result
-    else:
-        sys.stderr.write(f"[setup] {file_name} already exists\n")
-
-    extract_dir = os.path.join(path, "extracted")
-    if os.path.isdir(extract_dir) and os.listdir(extract_dir):
-        count = len(os.listdir(extract_dir))
-        sys.stderr.write(f"[setup] already extracted ({count} files)\n")
-        result["extracted"] = count
-    else:
-        os.makedirs(extract_dir, exist_ok=True)
-        count = _extract_zip(zip_dest, extract_dir)
-        sys.stderr.write(f"[setup] extracted {count} files\n")
-        result["extracted"] = count
-
+    result["extracted"] = count
     return result
 
 
-async def _setup_machine(api, name_or_id):
+async def _setup_machine(api, name_or_id, workdir="."):
     data = await api.api_htb_machine_profile(name_or_id)
     m = data.get("info", {}) if isinstance(data, dict) else {}
-    name = _safe(m.get("name", f"id_{name_or_id}"))
-    path = _mksetup(os.path.join("machines", name))
+    path = _mksetup(_path_for_machine(workdir, m))
     _write_task_md(path, m, "machine")
     return {"path": path}
 
 
-async def _setup_sherlock(api, sherlock_id):
+async def _setup_sherlock(api, sherlock_id, workdir=".", zip_password=None):
     data = await api.api_htb_sherlock_info(sherlock_id)
     s = data.get("data", {}) if isinstance(data, dict) else {}
-    name = _safe(s.get("name", f"id_{sherlock_id}"))
-    path = _mksetup(os.path.join("sherlocks", name))
+    path = _mksetup(_path_for_sherlock(workdir, s))
     _write_task_md(path, s, "sherlock")
-    return {"path": path}
+    result = {"path": path}
+
+    dl_data = await api.api_htb_sherlock_download_link(sherlock_id)
+    url = dl_data.get("url") if isinstance(dl_data, dict) else None
+    if not url:
+        result["download"] = None
+        return result
+
+    file_name = f"sherlock_{sherlock_id}.zip"
+    zip_dest = os.path.join(path, file_name)
+
+    pws = _zip_passwords(zip_password)
+    _, count = await _download_and_extract(url, zip_dest, os.path.join(path, "extracted"),
+                                           headers=api.headers, passwords=pws)
+    result["download"] = file_name
+    result["extracted"] = count
+    return result
 
 
 # --- arg + output helpers ---------------------------------------------------
 
 def _split_args(words):
-    """Separate bare positional args from ``key=value`` params."""
-    result={}
+    """Extract ``key=value`` params from *words*; bare words are warned and skipped."""
+    result = {}
     for tok in words:
         if "=" in tok:
             k, v = tok.split("=", 1)
-            #if k.endswith("[]"):
-            #    k = k[:-2]
-            #    v = v.split(",")
-            result[k]=v
+            result[k] = v
         else:
-            result[tok]=''
+            sys.stderr.write(f"[warn] ignoring bare word '{tok}' — expected key=value\n")
     return result
 
 
@@ -291,6 +333,8 @@ def _drill(data, pick):
 def _emit(data, use_yaml, pick):
     if pick:
         data = _drill(data, pick)
+        if data is None:
+            return
     if use_yaml:
         import yaml
         sys.stdout.write(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
@@ -298,9 +342,15 @@ def _emit(data, use_yaml, pick):
         sys.stdout.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+_KNOWN_FILTERS = {"category", "solved", "difficulty", "name", "points"}
+
+
 def _filter_items(items, params):
     """Client-side filter of a list of dicts by key=value (used for CTF tasks)."""
     for k, v in params:
+        if k not in _KNOWN_FILTERS:
+            sys.stderr.write(f"[warn] skipping unknown filter '{k}' — known: {', '.join(sorted(_KNOWN_FILTERS))}\n")
+            continue
         if k == "category":
             items = [c for c in items
                      if c.get("category", "").lower() == v.lower()]
@@ -356,14 +406,8 @@ async def _ctf_tasks(api, ctf_id, filters):
 
 
 async def _ctf_categories(api, ctf_id, full=False):
-    cats_raw = await api.api_ctf_categories()
-    cat_map = {}
-    if isinstance(cats_raw, list):
-        for cat in cats_raw:
-            cid = cat.get("id", 0)
-            cat_map[cid] = {"id": cid, "name": cat.get("name", f"Unknown-{cid}"),
-                            "total": 0, "solved": 0}
     challs = await api.api_ctf_challenges(ctf_id)
+    cat_map = {}
     for c in challs:
         cid = c.get("challenge_category_id", 0)
         e = cat_map.setdefault(cid, {"id": cid,
@@ -384,7 +428,7 @@ async def _ctf_task(api, ctf_id, task_id):
     for c in challs:
         if str(c.get("id")) == str(task_id):
             return c
-    return {"error": f"task {task_id} not found in CTF {ctf_id}"}
+    raise ValueError(f"task {task_id} not found in CTF {ctf_id}")
 
 
 async def _start_ctf_task_wait(api, ctf_id, task_id):
@@ -399,7 +443,7 @@ async def _start_ctf_task_wait(api, ctf_id, task_id):
         await asyncio.sleep(_POLL_INTERVAL)
         detail = await api.api_ctf_info(ctf_id, cache_this=0)
         for c in detail.get("challenges", []):
-            if c.get("id") == int(task_id):
+            if str(c.get("id")) == str(task_id):
                 if c.get("docker_online") and c.get("hostname"):
                     ip = c["hostname"]
                     ports = c.get("docker_ports", [])
@@ -410,14 +454,17 @@ async def _start_ctf_task_wait(api, ctf_id, task_id):
     return {"error": "timeout waiting for container", "last_response": rsp}
 
 
-async def _setup_ctf_task(api, ctf_id, task_id):
-    detail = await api.api_ctf_info(ctf_id)
+async def _setup_ctf_task(api, ctf_id, task_id, workdir=".", zip_password=None):
+    detail, challs = await api.api_ctf_challenges_with_detail(ctf_id)
+    task = None
+    for c in challs:
+        if str(c.get("id")) == str(task_id):
+            task = c
+            break
+    if task is None:
+        raise ValueError(f"task {task_id} not found in CTF {ctf_id}")
 
-    task = await _ctf_task(api, ctf_id, task_id)
-    if "error" in task:
-        return task
-
-    path = _mksetup(_path_for_task(".", detail, task))
+    path = _mksetup(_path_for_ctf_task(workdir, detail, task))
     _write_task_md(path, {**task, "category_name": task.get("category", "?")}, "challenge")
 
     file_name = task.get("filename")
@@ -440,17 +487,8 @@ async def _setup_ctf_task(api, ctf_id, task_id):
     else:
         sys.stderr.write(f"[setup] {file_name} already exists\n")
 
-    extract_dir = os.path.join(path, "extracted")
-    if os.path.isdir(extract_dir) and os.listdir(extract_dir):
-        count = len(os.listdir(extract_dir))
-        sys.stderr.write(f"[setup] already extracted ({count} files)\n")
-        result["extracted"] = count
-    else:
-        os.makedirs(extract_dir, exist_ok=True)
-        count = _extract_zip(zip_dest, extract_dir)
-        sys.stderr.write(f"[setup] extracted {count} files\n")
-        result["extracted"] = count
-
+    pws = _zip_passwords(zip_password)
+    result["extracted"] = _try_extract(zip_dest, os.path.join(path, "extracted"), passwords=pws)
     return result
 
 
@@ -476,7 +514,6 @@ async def _download_chal(api, cid, out_path):
     url = data.get("url") if isinstance(data, dict) else None
     if not url:
         return {"error": "no download url in response", "response": data}
-    from .tuiComponents.downloader import async_download
     dest = _resolve_out(out_path, f"challenge_{cid}.zip")
     size = await async_download(url, dest, headers=api.headers)
     return {"saved": os.path.abspath(dest), "bytes": size, "url": url}
@@ -488,7 +525,6 @@ async def _download_sherlock(api, sid, out_path):
     url = data.get("url") if isinstance(data, dict) else None
     if not url:
         return {"error": "no download url in response", "response": data}
-    from .tuiComponents.downloader import async_download
     dest = _resolve_out(out_path, f"sherlock_{sid}.zip")
     size = await async_download(url, dest, headers=api.headers)
     return {"saved": os.path.abspath(dest), "bytes": size, "url": url}
@@ -626,13 +662,13 @@ class _ChalCmd(Dispatcher):
     LABEL = "chal"
 
     @cmddoc("list challenges [state= difficulty[]= category[]= per_page= page=]")
-    def handle_list(self, words, **kw):
+    def handle_list(self, words, params, **kw):
         kv = _split_args(words)
         def shape(d):
             fields = ["id", "name", "difficulty", "category_name", "state",
                       "solves", "is_owned", "rating", "release_date"]
             return {"challenges": [_pick(c, fields) for c in _data(d)], "meta": _meta(d)}
-        return self.api.api_htb_chal_list(kv), shape
+        return self.api.api_htb_chal_list(_params(params, kv)), shape
 
     @cmddoc("challenge info <id>")
     def handle_info(self, words, params, **kw):
@@ -687,7 +723,10 @@ class _ChalCmd(Dispatcher):
     @cmddoc("create working dir: setup <id>")
     def handle_setup(self, words, **kw):
         cid = _one(words, "chal setup")
-        return _setup_chal(self.api, cid), None
+        s = kw.get("settings")
+        workdir = getattr(s, "workdir", ".")
+        return _setup_chal(self.api, cid, workdir=workdir,
+                           zip_password=getattr(s, "zip_password", None)), None
 
     @cmddoc("submit flag <id> <flag>")
     def handle_submit(self, words, **kw):
@@ -707,12 +746,21 @@ class _SherlockCmd(Dispatcher):
             return {"sherlocks": [_pick(s, fields) for s in _data(d)], "meta": _meta(d)}
         return self.api.api_htb_sherlock_list(_params(params, kv)), shape
 
+    @cmddoc("list sherlock categories")
+    def handle_categories(self, words, **kw):
+        def shape(d):
+            if isinstance(d, list):
+                return [_pick(c, ["id", "name"]) for c in d if isinstance(c, dict)]
+            return d
+        return self.api.api_htb_sherlock_categories(), shape
+
     @cmddoc("sherlock info <id>")
     def handle_info(self, words, params, **kw):
         sid = _one(words, "sherlock info")
         def shape(d):
             s = d.get("data", {}) if isinstance(d, dict) else {}
-            out = _pick(s, ["id", "description", "user_owns_count"])
+            out = _pick(s, ["id", "name", "difficulty", "category_name", "state",
+                            "description", "user_owns_count"])
             mods = s.get("academyModules") or []
             if mods:
                 out["academyModules"] = [m.get("name") for m in mods if isinstance(m, dict)]
@@ -742,7 +790,10 @@ class _SherlockCmd(Dispatcher):
     @cmddoc("create working dir: setup <id>")
     def handle_setup(self, words, **kw):
         sid = _one(words, "sherlock setup")
-        return _setup_sherlock(self.api, sid), None
+        s = kw.get("settings")
+        workdir = getattr(s, "workdir", ".")
+        return _setup_sherlock(self.api, sid, workdir=workdir,
+                               zip_password=getattr(s, "zip_password", None)), None
 
     @cmddoc("submit answer <sherlock-id> <task-id> <answer>")
     def handle_submit(self, words, **kw):
@@ -801,14 +852,19 @@ class _MachineCmd(Dispatcher):
     @cmddoc("create working dir: setup <name>")
     def handle_setup(self, words, **kw):
         name = _one(words, "machine setup")
-        return _setup_machine(self.api, name), None
+        workdir = getattr(kw.get("settings"), "workdir", ".")
+        return _setup_machine(self.api, name, workdir=workdir), None
 
     @cmddoc("spawn/start VM by <id> [--wait: poll until IP ready]")
     def handle_spawn(self, words, **kw):
         mid = _one(words, "machine spawn")
         if kw.get("wait"):
             return _spawn_machine_wait(self.api, mid), None
-        return self.api.api_htb_vm_spawn(mid), _shape_action
+        async def _spawn_and_hint():
+            rsp = await self.api.api_htb_vm_spawn(mid)
+            sys.stderr.write("[hint] use 'machine active' to check when IP is ready, or add --wait to poll\n")
+            return rsp
+        return _spawn_and_hint(), _shape_action
 
     handle_start = handle_spawn
 
@@ -897,7 +953,7 @@ class _CtfCtxCmd(Dispatcher):
     def default(self, ctf_id, params, **kw):
         def shape(d):
             if isinstance(d, dict):
-                d.pop("challenges", None)
+                return {k: v for k, v in d.items() if k != "challenges"}
             return d
         return self.api.api_ctf_info(ctf_id, params), shape
 
@@ -932,7 +988,10 @@ class _CtfCtxCmd(Dispatcher):
     @cmddoc("create working dir: setup <task-id>")
     def handle_setup(self, words, ctf_id, **kw):
         tid = _one(words, "ctf setup")
-        return _setup_ctf_task(self.api, ctf_id, tid), None
+        s = kw.get("settings")
+        workdir = getattr(s, "workdir", ".")
+        return _setup_ctf_task(self.api, ctf_id, tid, workdir=workdir,
+                               zip_password=getattr(s, "zip_password", None)), None
 
     @cmddoc("start task container <task-id> [--wait: poll until IP:port ready]")
     def handle_start(self, words, ctf_id, **kw):
@@ -1007,7 +1066,8 @@ def main(argv=None):
         epilog=_usage_commands(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--raw", action="store_true", help="full raw JSON response (default: minimal fields as YAML)")
+    parser.add_argument("--raw", action="store_true", help="skip shaping, show full response (default format: JSON; combine with --yaml for full YAML)")
+    parser.add_argument("--yaml", action="store_true", help="YAML output (default when --raw is not set)")
     parser.add_argument("--pick", help="drill into result by dotted path, e.g. info.name or 0.id")
     parser.add_argument("--data", help="extra JSON object merged into a POST body")
     parser.add_argument("--page", help="convenience query param: page=N")
@@ -1055,13 +1115,16 @@ def main(argv=None):
         try:
             result, shape = _MainCmd(api, list(words), params=params,
                                         data_json=args.data, wait=args.wait,
-                                        full=args.full).result
+                                        full=args.full, settings=settings).result
             return await result, shape
         finally:
             await api.close()
 
     try:
         data, shape = asyncio.run(_run())
+    except ValueError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
     except Exception as e:
         sys.stderr.write(f"error: {e}\n")
         return 1
@@ -1069,9 +1132,9 @@ def main(argv=None):
     if not args.raw and shape:
         try:
             data = shape(data)
-        except Exception:
-            pass  # on any surprise shape, fall back to full data (still YAML)
-    _emit(data, use_yaml=not args.raw, pick=args.pick)
+        except Exception as e:
+            sys.stderr.write(f"[warn] shape failed ({e}), showing raw data\n")
+    _emit(data, use_yaml=args.yaml or not args.raw, pick=args.pick)
     return 0
 
 

@@ -1,5 +1,4 @@
 import os
-import re
 
 from textual.widgets import DataTable, Button, Label, Input, Markdown, Static, TabbedContent, TabPane, Select
 from textual.screen import ModalScreen
@@ -11,6 +10,7 @@ from rich.table import Table
 from .messages import DebugMsg, ErrorMsg, EventMsg
 from .downloader import async_download_and_extract
 from .confirm_dir import ensure_task_dir
+from ..paths import _path_for_sherlock
 
 sherlock_difficulty_map = {
     "Very Easy": "#90ff3f",
@@ -20,19 +20,35 @@ sherlock_difficulty_map = {
     "Insane": "#ffccff",
 }
 
-_clean_re = re.compile('[^0-9a-zA-Z_]+')
 
 def _is_task_completed(task):
     return task.get("is_complete", False) or task.get("completed", False)
 
 
-def _sherlock_dir(name, workdir="./work"):
-    clean = _clean_re.sub('', name.lower())
-    return os.path.join(workdir, 'sherlocks', clean)
-
-
-SHERLOCK_CATEGORIES = ["DFIR", "SOC", "Malware Analysis", "Threat Intelligence", "Cloud"]
+_FALLBACK_SHERLOCK_CATEGORIES = ["DFIR", "SOC", "Malware Analysis", "Threat Intelligence", "Cloud"]
 SHERLOCK_DIFFICULTIES = ["Easy", "Medium", "Hard", "Insane"]
+
+
+async def _ensure_sherlock_categories(app):
+    if hasattr(app, '_sherlock_categories') and app._sherlock_categories:
+        return app._sherlock_categories
+    try:
+        raw = await app.API.api_htb_sherlock_categories()
+        if isinstance(raw, dict):
+            raw = raw.get("data", raw.get("info", []))
+        if isinstance(raw, list) and raw:
+            names = []
+            for item in raw:
+                if isinstance(item, dict):
+                    names.append(item.get("name", str(item.get("id", "?"))))
+                elif isinstance(item, str):
+                    names.append(item)
+            app._sherlock_categories = names or _FALLBACK_SHERLOCK_CATEGORIES
+        else:
+            app._sherlock_categories = _FALLBACK_SHERLOCK_CATEGORIES
+    except Exception:
+        app._sherlock_categories = _FALLBACK_SHERLOCK_CATEGORIES
+    return app._sherlock_categories
 
 
 class SherlockFilter:
@@ -78,7 +94,7 @@ class SherlockFilterScreen(ModalScreen):
         with Container(id="sherlock_filter_popup"):
             yield Label("Filter Sherlocks")
             yield Select(
-                ((c, c) for c in SHERLOCK_CATEGORIES),
+                [],
                 id="sherlock_cat_select",
                 prompt="Category")
             yield Select(
@@ -93,6 +109,12 @@ class SherlockFilterScreen(ModalScreen):
 
     def on_mount(self):
         self.filtering = SherlockFilter()
+        self.run_worker(self._load_categories())
+
+    async def _load_categories(self):
+        cats = await _ensure_sherlock_categories(self.app)
+        sel = self.query_one("#sherlock_cat_select", Select)
+        sel.set_options(((c, c) for c in cats))
 
     @on(Select.Changed, "#sherlock_cat_select")
     def cat_changed(self, event):
@@ -187,7 +209,7 @@ class SherlockDetails(Container):
                 pass
 
             workdir = self.app.settings.workdir
-            self._task_dir = _sherlock_dir(self.sherlock_data.get("name", "unknown"), workdir)
+            self._task_dir = _path_for_sherlock(workdir, self.sherlock_data)
 
             self._render_info(description)
             self._render_tasks()
@@ -335,7 +357,7 @@ class SherlockDetails(Container):
             sdir = getattr(self, '_task_dir', None)
             if not sdir:
                 workdir = self.app.settings.workdir
-                sdir = _sherlock_dir(self.sherlock_data.get("name", "unknown"), workdir)
+                sdir = _path_for_sherlock(workdir, self.sherlock_data)
             os.makedirs(sdir, exist_ok=True)
             chall_data = {
                 "real_dir_name": os.path.abspath(sdir),

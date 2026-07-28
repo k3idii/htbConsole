@@ -530,7 +530,7 @@ Header {
 
     #settings_cache_row,
     #settings_burp_row,
-    #settings_autocreate_row {
+    #settings_autocreate_row, #settings_savelogs_row {
         height: 3;
         width: 100%;
         padding: 0 1;

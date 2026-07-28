@@ -14,6 +14,15 @@ _burp_addr = os.environ.get("USE_BURP")
 burp_proxy = httpx.Proxy(_burp_addr) if _burp_addr else None
 
 
+async def async_download(url, out_file, timeout=30, headers=None):
+    async with httpx.AsyncClient(verify=False, headers=headers) as client:
+        response = await client.get(url, timeout=timeout, follow_redirects=True)
+        response.raise_for_status()
+        with open(out_file, "wb") as f:
+            f.write(response.content)
+        return len(response.content)
+
+
 def _maybe_int(s):
     try:
         return int(s)
@@ -47,7 +56,7 @@ class HTBSession:
 
     # request cache (opt-in out USE_CACHE and cache_this kwarg)
     self.CACHE = {}
-    self._CACHE_FILE = cache_file or self.CACHE_FILE_NAME
+    self._CACHE_FILE = cache_file
     self.try_load_cache()
 
     self._token_dead = False
@@ -107,7 +116,8 @@ class HTBSession:
     if self._CACHE_FILE is None:
         return
     try:
-      self.CACHE = json.load(open(self._CACHE_FILE))
+      with open(self._CACHE_FILE) as f:
+        self.CACHE = json.load(f)
     except Exception as ex:
       self._handle_log_debug(f"API::CACHE LOAD FAILED : {ex}")
 
@@ -115,7 +125,8 @@ class HTBSession:
     self.CACHE[req_id] = data
     if self._CACHE_FILE is None:
         return
-    json.dump(self.CACHE, open(self._CACHE_FILE, "w"))
+    with open(self._CACHE_FILE, "w") as f:
+      json.dump(self.CACHE, f)
     self._handle_log_debug("API::CACHE SAVED", req_id)
 
   # --- dont_cache decorator (yes, can be both a classmethod)
@@ -185,6 +196,12 @@ class HTBSession:
     URL = self._make_url(endpoint)
     req_id = f"{method}_{endpoint}_{str(kw)}"
     self._handle_log_debug(f"API::REQUEST {method} > {URL}", **kw)
+
+    params = kw.get("params")
+    if params:
+      pkeys = params.keys() if isinstance(params, dict) else [k for k, _ in params] if isinstance(params, list) else []
+      if any(k in ("page", "per_page") for k in pkeys):
+        cache_this = 0
 
     if self.USE_CACHE and cache_this:
       data = self.get_from_cache(req_id)
@@ -280,6 +297,9 @@ class HTBApiSession(HTBSession):
     return await self.async_post("/api/v4/challenge/own", {"challenge_id": _maybe_int(chal_id), "flag": flag}, **kw)
 
   # sherlocks
+  async def api_htb_sherlock_categories(self, **kw):
+    return await self.async_get("/api/v4/sherlocks/categories/list", **kw)
+
   async def api_htb_sherlock_list(self, params=None, **kw):
     return await self.async_get("/api/v4/sherlocks", params=params, **kw)
 
@@ -383,8 +403,14 @@ class HTBCTFSession(HTBSession):
     return await self.async_get(f"/api/ctfs/{ctf_id}", params=params, **kw)
 
   async def api_ctf_challenges(self, ctf_id, **kw):
+    """Return enriched challenges list for a CTF (categories resolved)."""
+    detail, challs = await self.api_ctf_challenges_with_detail(ctf_id, **kw)
+    return challs
+
+  async def api_ctf_challenges_with_detail(self, ctf_id, **kw):
+    """Return (detail_dict, enriched_challenges) — single fetch, no TUI deps."""
     detail = await self.api_ctf_info(ctf_id, **kw)
-    from .tuiComponents.ctf_challs import CATEGORY_NAMES
+    cat_map = {}
     try:
       api_cats = await self.api_ctf_categories(cache_this=True)
       if isinstance(api_cats, list):
@@ -392,14 +418,14 @@ class HTBCTFSession(HTBSession):
           cid = cat.get("id")
           cname = cat.get("name")
           if cid and cname:
-            CATEGORY_NAMES[cid] = cname
+            cat_map[cid] = cname
     except Exception:
       pass
     challs = detail.get("challenges", [])
     for c in challs:
       cid = c.get("challenge_category_id", 0)
-      c["category"] = CATEGORY_NAMES.get(cid, f"Unknown-{cid}")
-    return challs
+      c.setdefault("category", cat_map.get(cid, f"Unknown-{cid}"))
+    return detail, challs
 
   async def api_ctf_categories(self, **kw):
     return await self.async_get("/api/public/challenge-categories", **kw)

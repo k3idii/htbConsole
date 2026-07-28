@@ -32,6 +32,9 @@ class ContainerSettings(VerticalScroll):
                 with Horizontal(id="settings_autocreate_row"):
                     yield Label("Auto-create task directories")
                     yield Switch(id="settings_autocreate_toggle", value=True)
+                with Horizontal(id="settings_savelogs_row"):
+                    yield Label("Save logs to file")
+                    yield Switch(id="settings_savelogs_toggle", value=True)
 
             with Container(id="settings_extract"):
                 yield Label("[b]Extraction", id="settings_extract_title")
@@ -81,6 +84,7 @@ class ContainerSettings(VerticalScroll):
             self.query_one("#settings_burp_toggle", Switch).value = bool(s.burp_proxy)
             self.query_one("#settings_workdir_input", Input).value = s.workdir
             self.query_one("#settings_autocreate_toggle", Switch).value = s.auto_create_dir
+            self.query_one("#settings_savelogs_toggle", Switch).value = s.save_logs
             self.query_one("#settings_zip_password_input", Input).value = s.zip_password
             self.query_one("#settings_unpack_cmd_input", Input).value = s.unpack_cmd
             self.query_one("#settings_terminal_input", Input).value = s.terminal
@@ -186,6 +190,12 @@ class ContainerSettings(VerticalScroll):
     def toggle_autocreate(self, event: Switch.Changed):
         self.app.settings.auto_create_dir = event.value
         self.app.post_message(EventMsg(f"Auto-create directories {'enabled' if event.value else 'disabled'}"))
+        self._persist()
+
+    @on(Switch.Changed, "#settings_savelogs_toggle")
+    def toggle_savelogs(self, event: Switch.Changed):
+        self.app.settings.save_logs = event.value
+        self.app.post_message(EventMsg(f"Save logs to file {'enabled' if event.value else 'disabled'}"))
         self._persist()
 
     @on(Input.Submitted, "#settings_zip_password_input")

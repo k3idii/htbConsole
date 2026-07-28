@@ -1,5 +1,4 @@
 import os
-import re
 from datetime import datetime
 
 from textual import on
@@ -11,13 +10,7 @@ from ..httpApi import HTBApiSession
 from .messages import DebugMsg, ErrorMsg, EventMsg
 from .notes_editor import NotesEditor
 from .confirm_dir import ensure_task_dir
-
-
-_clean_re = re.compile('[^0-9a-zA-Z_]+')
-
-def _machine_dir(name, workdir="./work"):
-    clean = _clean_re.sub('', name.lower())
-    return os.path.join(workdir, 'machines', clean)
+from ..paths import _path_for_machine
 
 
 DIFFICULTY_COLORS = {
@@ -325,7 +318,7 @@ class MachineDetails(Static):
         self.query_one("#machine_details", Markdown).update(self.make_machine_details())
         name = self.selected_machine_data.get("name", "unknown")
         workdir = self.app.settings.workdir
-        self._task_dir = _machine_dir(name, workdir)
+        self._task_dir = _path_for_machine(workdir, self.selected_machine_data)
         ensure_task_dir(self.app, self._task_dir, self._on_dir_ready)
         # fetch full profile (info_status, maker, synopsis, fresh play info, ...)
         self.run_worker(self._fetch_profile(machine_id, name))

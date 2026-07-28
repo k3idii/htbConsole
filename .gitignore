@@ -14,7 +14,6 @@ dist/
 .eggs/
 
 # Tokens / secrets
-token.txt
 token*.txt
 .env
 *.key
@@ -23,6 +22,7 @@ token*.txt
 req_cache.json
 work/
 local/
+*logs*
 
 # Temp / dev
 _tmp/

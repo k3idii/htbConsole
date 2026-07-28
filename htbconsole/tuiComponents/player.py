@@ -64,6 +64,9 @@ class PlayerActivity(Static):
 
     async def _load_activity(self):
         try:
+            await self.app.ensure_init()
+            if not self.app.CURRENT_USER:
+                return
             uid = self.app.CURRENT_USER['info']['id']
             self.user_data["id"] = uid
 
@@ -179,6 +182,8 @@ class PlayerStats(Static):
 
     async def _fetch_profile(self):
         await self.app.ensure_init()
+        if not self.app.CURRENT_USER:
+            return
         ses = self.app.get_api()
         uid = self.app.CURRENT_USER['info']['id']
         data = await ses.api_htb_profile(uid)

@@ -1,7 +1,8 @@
-import httpx
 import os
 import shlex
 import subprocess
+
+from ..httpApi import async_download
 
 DEFAULT_ZIP_PASSWORD = "hackthebox"
 DEFAULT_UNPACK_CMD = "7z -o./unpacked/ -p{password} x {file}"
@@ -30,15 +31,6 @@ def execute_unpack(dir_path, filename, password=None, unpack_cmd=None):
     with open(log_fn, "ab") as f:
         f.write(b"\n-----\n".join(output))
     return True
-
-
-async def async_download(url, out_file, timeout=30, headers=None):
-    async with httpx.AsyncClient(verify=False, headers=headers) as client:
-        response = await client.get(url, timeout=timeout, follow_redirects=True)
-        response.raise_for_status()
-        with open(out_file, "wb") as f:
-            f.write(response.content)
-        return len(response.content)
 
 
 async def async_download_and_extract(chall_data, url, password=None, unpack_cmd=None):

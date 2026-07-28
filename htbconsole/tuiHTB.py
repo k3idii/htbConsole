@@ -1,5 +1,6 @@
 import os
 import asyncio
+from datetime import datetime
 
 from textual import on
 from textual.binding import Binding
@@ -38,10 +39,13 @@ class HackTheApp(App):
 
   SCREENS = {"log": LogScreen}
 
+  _LOG_FILE = "htb_logs.txt"
+
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self._log_buffer = []
     self._log_visible = False
+    self._log_fh = None
     self.active_machine_id = None
     self.active_machine_info = None
 
@@ -102,11 +106,24 @@ class HackTheApp(App):
   def api_notify(self, message, severity="information", timeout=5):
     self.notify(message, severity=severity, timeout=timeout)
 
+  def _log_to_file(self, message):
+    if not self.settings.save_logs:
+      return
+    try:
+      if not self._log_fh:
+        self._log_fh = open(self._LOG_FILE, "a", encoding="utf-8")
+      ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+      self._log_fh.write(f"[{ts}] {message}\n")
+      self._log_fh.flush()
+    except Exception:
+      pass
+
   @on(DebugMsg)
   @on(EventMsg)
   @on(ErrorMsg)
   def log_debug_messages(self, message: SelfFormattingMsg) -> None:
     self._log_buffer.append(message)
+    self._log_to_file(message)
     if self._log_visible:
       try:
         self.screen.query_one("#log", RichLog).write(message)
@@ -192,6 +209,9 @@ class HackTheApp(App):
 
   async def on_unmount(self) -> None:
     self.settings.save()
+    if self._log_fh:
+      self._log_fh.close()
+      self._log_fh = None
     await self.API.close()
 
   def get_api(self) -> HTBApiSession:
