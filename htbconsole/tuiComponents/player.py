@@ -21,7 +21,7 @@ RANK_MAP  = {
             11: "Mythic",
             12: "Immortal",
             13: "Godlike",
-            14: "<nothing aobve>",
+            14: "<nothing above>",
         }
 
   

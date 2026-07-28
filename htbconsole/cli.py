@@ -567,6 +567,15 @@ def cmddoc(description):
     return deco
 
 
+def _subtree_help(cls, label):
+    rows = list(_iter_commands(cls, [label]))
+    if not rows:
+        return ""
+    width = max(len(path) for path, _ in rows)
+    lines = [f"  {path.ljust(width)}   {desc}" for path, desc in rows]
+    return "\navailable:\n" + "\n".join(lines)
+
+
 class Dispatcher:
     """Pop the first word, call ``handle_<word>(words, **kw)``; store in ``self.result``.
 
@@ -588,11 +597,13 @@ class Dispatcher:
         cmd = words.pop(0)
         fn = getattr(self, f"handle_{cmd}", None)
         if fn is None:
-            raise ValueError(f"{self.LABEL}: unknown command '{cmd}'")
+            raise ValueError(f"{self.LABEL}: unknown command '{cmd}'"
+                             + _subtree_help(type(self), self.LABEL))
         return fn(words, **kw)
 
     def default(self, **kw):
-        raise ValueError(f"{self.LABEL}: missing subcommand")
+        raise ValueError(f"{self.LABEL}: missing subcommand"
+                         + _subtree_help(type(self), self.LABEL))
 
 
 class _MainCmd(Dispatcher):
@@ -643,15 +654,6 @@ class _HtbCmd(Dispatcher):
                 out["team"] = p["team"].get("name")
             return out
         return self.api.api_htb_profile(uid, params), shape
-
-    @cmddoc("currently active machine")
-    def handle_active(self, words, params, **kw):
-        def shape(d):
-            info = d.get("info") if isinstance(d, dict) else None
-            if not info:
-                return {"active": None}
-            return _pick(info, ["id", "name", "ip", "type", "expires_at"])
-        return self.api.api_htb_machine_active(params), shape
 
     @cmddoc("raw POST <endpoint> [key=value...] [--data JSON]")
     def handle_post(self, words, data_json=None, **kw):
@@ -1103,9 +1105,7 @@ def main(argv=None):
 
     settings = (HTBSettings if platform == "htb" else CTFSettings).load()
     session_cls = HTBApiSession if platform == "htb" else HTBCTFSession
-    cache_file = os.path.join(settings.workdir, f"{platform}_cli_cache.json")
-    api = session_cls(token, cache_file=cache_file)
-    api.USE_CACHE = False
+    api = session_cls(token, cache_file=None)
     if args.debug:
         api._handle_log_event = _log_event
         api._handle_log_debug = _log_debug

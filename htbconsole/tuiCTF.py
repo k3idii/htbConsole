@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import datetime
 
@@ -41,6 +42,9 @@ class CTFApp(App):
         self._log_buffer = []
         self._log_visible = False
         self._log_fh = None
+        self._init_lock = asyncio.Lock()
+        self._initialized = False
+        self._prompting = False
 
     def action_logs(self):
         if isinstance(self.screen, LogScreen):
@@ -76,7 +80,7 @@ class CTFApp(App):
     def create_session(self, token) -> HTBCTFSession:
         """Build an HTBCTFSession bound to this app's log hooks + workdir cache."""
         workdir = getattr(getattr(self, "settings", None), "workdir", ".")
-        session = HTBCTFSession(token, cache_file=os.path.join(workdir, "ctf_cach.json"))
+        session = HTBCTFSession(token, cache_file=os.path.join(workdir, "ctf_cache.json"))
         session._handle_log_event = self.api_log_event
         session._handle_log_debug = self.api_log_debug
         session._handle_notify = self.api_notify
@@ -111,29 +115,45 @@ class CTFApp(App):
         os.makedirs(self.settings.workdir, exist_ok=True)
         self.query_one("#ctf_challenges_view").styles.display = "none"
         self.post_message(EventMsg("CTF App ready"))
-        self.run_worker(self._validate_token())
+        self.run_worker(self.ensure_init())
 
-    async def _validate_token(self):
+    async def ensure_init(self):
+        async with self._init_lock:
+            if self._initialized:
+                return
+            self._initialized = await self._validate_token()
+
+    async def _validate_token(self) -> bool:
         try:
             await self.CTF_API.async_get("/api/ctfs")
             self.post_message(EventMsg("CTF token valid"))
-        except Exception:
-            self.push_screen(
-                TokenInputScreen(
-                    title="CTF Token Required",
-                    message="Token is missing or invalid.",
-                    token_env="CTF_TOKEN",
-                ),
-                self._on_token_input,
-            )
+            return True
+        except Exception as ex:
+            self._prompt_for_token(ex)
+            return False
+
+    def _prompt_for_token(self, ex):
+        if self._prompting:
+            return
+        self._prompting = True
+        self.push_screen(
+            TokenInputScreen(
+                title="CTF Token Required",
+                message=f"Token is missing or invalid: {ex}",
+                token_env="CTF_TOKEN",
+            ),
+            self._on_token_input,
+        )
 
     def _on_token_input(self, token):
+        self._prompting = False
         if not token:
             self.exit()
             return
         self.CTF_API = self.create_session(token)
+        self._initialized = False
         self.post_message(EventMsg("New CTF token set — validating..."))
-        self.run_worker(self._validate_token())
+        self.run_worker(self.ensure_init())
 
     def _on_ctf_join(self, result):
         if result is None:

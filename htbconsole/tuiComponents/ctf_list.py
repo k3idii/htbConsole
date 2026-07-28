@@ -221,6 +221,7 @@ class CTFListView(Container):
 
     async def _load(self):
         try:
+            await self.app.ensure_init()
             ctfs = await self.app.CTF_API.api_ctf_list()
             self.app._ctf_cache = {c['id']: c for c in ctfs}
 

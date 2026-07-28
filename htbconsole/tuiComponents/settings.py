@@ -158,6 +158,8 @@ class ContainerSettings(VerticalScroll):
             self.app.settings.burp_proxy = addr
             os.environ["USE_BURP"] = addr
             httpApi.burp_proxy = httpx.Proxy(addr)
+            import warnings
+            warnings.filterwarnings("ignore", message="Unverified HTTPS request")
         else:
             self.app.settings.burp_proxy = ""
             os.environ.pop("USE_BURP", None)

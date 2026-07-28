@@ -142,6 +142,7 @@ class SherlockDetails(Container):
         super().__init__(*args, **kwargs)
         self.sherlock_data = None
         self.tasks_data = []
+        self._selected_task_id = None
 
     def compose(self) -> ComposeResult:
         with TabbedContent():
@@ -271,12 +272,12 @@ class SherlockDetails(Container):
         task = next((t for t in self.tasks_data if t["id"] == task_id), None)
         if not task:
             return
+        self._selected_task_id = task_id
         self.app.post_message(DebugMsg("Sherlock::TaskSelected", task))
         self._render_task_detail(task)
         inp = self.query_one("#sherlock_answer_input", Input)
         mask = task.get("masked_flag", "??")
         inp.placeholder = f"Answer: {mask}"
-        inp._task_id = task_id
 
     def _render_task_detail(self, task):
         info = Table.grid(expand=True)
@@ -313,7 +314,7 @@ class SherlockDetails(Container):
     @on(Button.Pressed, "#sherlock_submit_button")
     async def submit_answer(self, event):
         inp = self.query_one("#sherlock_answer_input", Input)
-        task_id = getattr(inp, '_task_id', None)
+        task_id = getattr(self, '_selected_task_id', None)
         answer = inp.value.strip()
         if not task_id or not answer:
             self.app.notify("Select a task and enter an answer", severity="warning")

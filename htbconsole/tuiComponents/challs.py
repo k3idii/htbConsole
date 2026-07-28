@@ -1,7 +1,6 @@
 
 
 from textual import system_commands
-from textual import system_commands
 import os
 
 from textual.widgets import DataTable
@@ -56,10 +55,12 @@ class CustomUriDispatcher:
         self.app.post_message(ErrorMsg(ex))
 
   def _run_cmd(self, args):
+    # WARNING: Intentional shell execution from user-configured custom action links.
     self.app.post_message(EventMsg(f"exec: {args}"))
     out = execute_shell(args)
 
   def _run_terminal(self, args):
+    # WARNING: Intentional shell execution — opens user-configured terminal emulator.
     self.app.post_message(EventMsg(f"terminal: {args}"))
     cmd = f"""{self.app.settings.terminal} {args}"""
     out = execute_shell(cmd)
@@ -270,7 +271,7 @@ class ChallDetails(Container):
         self.app.notify(f"Submit failed: {err[:80]}", severity="error")
       self.app.post_message(ErrorMsg(ex))
 
-  def upadate_title(self, new_title):
+  def update_title(self, new_title):
     self.border_title = new_title
   
   async def _reload_panel_worker(self):
@@ -292,7 +293,7 @@ class ChallDetails(Container):
   def _finish_reload_panel(self, path):
     try:
       self.chall_data['_dir_exists'] = path is not None
-      self.upadate_title(f"{self.CURRENT_ID} :: {self.chall_data.get('name','!??!?')}")
+      self.update_title(f"{self.CURRENT_ID} :: {self.chall_data.get('name','!??!?')}")
       self._reload_task_info()
       tree = self.query_one("#chall_dir_tree", DirectoryTree)
       if path is not None:
@@ -510,7 +511,7 @@ class ChallFilterThing:
     self.category = []
     self.state = ''
 
-  def sterialize(self):
+  def serialize(self):
     val = []
     if self.name:
       val.append( ("name", self.name) )
@@ -558,13 +559,13 @@ class ChallFilterScreen(ModalScreen):
   
   def compose(self) -> ComposeResult:
     with Container(id="filter_popup"):
-      yield Label("Filter Challanges")
+      yield Label("Filter Challenges")
       yield Input(placeholder="Challenge name ...", id="chall_search_input")
       cats = getattr(self.app, '_challenge_categories', None)
       cat_list = cats.name_to_id.items() if cats else []
       yield Select(
         ( (name, id) for name, id in cat_list ), 
-        id="chall_caltegory_selection", 
+        id="chall_category_selection", 
         prompt="Select Category")
       
       dif_list =  chall_difficulty_map.keys()
@@ -589,7 +590,7 @@ class ChallFilterScreen(ModalScreen):
     self.dismiss(self.filtering)
 
         
-  @on(Select.Changed, "#chall_caltegory_selection")
+  @on(Select.Changed, "#chall_category_selection")
   def category_changed(self, event: Select.Changed) -> None:
     """Handle category selection change."""
     self.filtering.category = [event.value] if event.value != Select.BLANK else []
@@ -657,7 +658,7 @@ class ChallListTable(DataTable):
 
   async def _fetch_page(self):
     filter_params = []
-    filter_params += self.filtering.sterialize()
+    filter_params += self.filtering.serialize()
     filter_params.append(("per_page", str(self.PER_PAGE)))
     filter_params.append(("page", str(self.current_page)))
 

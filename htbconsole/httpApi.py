@@ -2,9 +2,6 @@ import httpx
 import asyncio
 import json
 import os
-import warnings
-warnings.filterwarnings("ignore", message="Unverified HTTPS request")
-
 
 class TokenExpiredError(Exception):
     pass
@@ -13,9 +10,13 @@ class TokenExpiredError(Exception):
 _burp_addr = os.environ.get("USE_BURP")
 burp_proxy = httpx.Proxy(_burp_addr) if _burp_addr else None
 
+if _burp_addr:
+    import warnings
+    warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+
 
 async def async_download(url, out_file, timeout=30, headers=None):
-    async with httpx.AsyncClient(verify=False, headers=headers) as client:
+    async with httpx.AsyncClient(verify=not bool(burp_proxy), headers=headers) as client:
         response = await client.get(url, timeout=timeout, follow_redirects=True)
         response.raise_for_status()
         with open(out_file, "wb") as f:
@@ -75,7 +76,7 @@ class HTBSession:
   # --- client management ----------------------------------------------------
 
   def _build_client_kw(self):
-    kw = {"verify": False}
+    kw = {"verify": not bool(burp_proxy)}
     if burp_proxy:
       kw["proxy"] = burp_proxy
     return kw

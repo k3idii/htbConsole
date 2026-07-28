@@ -18,15 +18,6 @@ from .confirm_dir import ensure_task_dir
 from ..paths import _path_for_ctf, _path_for_ctf_task
 
 
-CATEGORY_NAMES = {
-    1: "Sanity", 2: "Pwn", 3: "Crypto", 4: "Misc", 5: "Web",
-    6: "Stego", 7: "Forensics", 8: "Reversing", 9: "Mobile",
-    10: "ML/AI", 11: "Blockchain", 12: "Coding", 13: "GamePwn",
-    14: "OSINT", 15: "Hardware", 16: "Fullpwn", 17: "ICS",
-    18: "Cloud", 19: "Defense", 20: "Attack", 21: "Cloud",
-}
-
-
 def _assigned_names(chall):
     users = chall.get('associated_users') or chall.get('assigned_users') or []
     if not isinstance(users, list):
@@ -70,6 +61,7 @@ class CTFChallengesView(Container):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._selected_chall = None
+        self._cat_names = {}
 
     def compose(self) -> ComposeResult:
         with TabbedContent(id="ctf_context_tabs"):
@@ -148,14 +140,15 @@ class CTFChallengesView(Container):
             challenges = detail.get('challenges', [])
             self.app._ctf_challenges = {c['id']: c for c in challenges}
 
+            self._cat_names = {}
             try:
-                api_cats = await self.app.CTF_API.api_ctf_categories(cache_this=True)
+                api_cats = await self.app.CTF_API.api_ctf_categories(cache_this=0)
                 if isinstance(api_cats, list):
                     for cat in api_cats:
                         cid = cat.get('id')
                         cname = cat.get('name')
                         if cid and cname:
-                            CATEGORY_NAMES[cid] = cname
+                            self._cat_names[cid] = cname
             except Exception:
                 pass
 
@@ -188,7 +181,7 @@ class CTFChallengesView(Container):
             cats = {}
             for c in challenges:
                 cat_id = c.get('challenge_category_id', 0)
-                cat_name = CATEGORY_NAMES.get(cat_id, f"Unknown-{cat_id}")
+                cat_name = self._cat_names.get(cat_id, f"Unknown-{cat_id}")
                 c.setdefault('category', cat_name)
                 if cat_id not in cats:
                     cats[cat_id] = {'name': cat_name, 'total': 0, 'solved': 0, 'challenges': []}
@@ -225,7 +218,7 @@ class CTFChallengesView(Container):
             rank_dt.clear()
             sorted_challs = sorted(challenges, key=lambda c: c.get('solves', 0))
             for i, c in enumerate(sorted_challs, 1):
-                cat_name = CATEGORY_NAMES.get(c.get('challenge_category_id', 0), '?')
+                cat_name = self._cat_names.get(c.get('challenge_category_id', 0), '?')
                 rank_dt.add_row(
                     str(i),
                     c['name'],
@@ -316,7 +309,6 @@ class CTFChallengesView(Container):
         self._update_action_buttons()
         inp = self.query_one("#ctf_flag_input", Input)
         inp.placeholder = f"Flag for {chall.get('name', '?')}..."
-        inp._chall_id = chall['id']
 
         ctf = self.app._current_ctf
         if ctf:
@@ -377,12 +369,12 @@ class CTFChallengesView(Container):
 
     @on(Button.Pressed, "#ctf_flag_submit")
     async def submit_flag(self, event):
-        inp = self.query_one("#ctf_flag_input", Input)
-        chall_id = getattr(inp, '_chall_id', None)
-        flag = inp.value.strip()
-        if not chall_id or not flag:
+        chall = self._selected_chall
+        flag = self.query_one("#ctf_flag_input", Input).value.strip()
+        if not chall or not flag:
             self.app.notify("Select a challenge and enter a flag", severity="warning")
             return
+        chall_id = chall['id']
         self.app.post_message(EventMsg(f"CTF::SubmitFlag chall={chall_id} flag={flag}"))
         try:
             resp = await self.app.CTF_API.api_ctf_submit(chall_id, flag)
@@ -390,7 +382,7 @@ class CTFChallengesView(Container):
             self.app.notify(msg, severity="information")
         except Exception as e:
             self.app.notify(f"Submit failed: {e}", severity="error")
-        inp.value = ""
+        self.query_one("#ctf_flag_input", Input).value = ""
 
     @on(Button.Pressed, "#ctf_create_dirs_btn")
     def create_dirs_pressed(self, event):

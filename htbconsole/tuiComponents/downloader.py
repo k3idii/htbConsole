@@ -9,11 +9,13 @@ DEFAULT_UNPACK_CMD = "7z -o./unpacked/ -p{password} x {file}"
 
 
 def execute_shell(cmd):
+    # WARNING: Intentional shell execution for user-configured custom actions and terminal commands.
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     return p.communicate()
 
 
 def execute_unpack(dir_path, filename, password=None, unpack_cmd=None):
+    # WARNING: password is interpolated into shell command without quoting — trusted input only (user settings).
     safe_dir = shlex.quote(dir_path)
     safe_file = shlex.quote(filename)
     pw = password or DEFAULT_ZIP_PASSWORD
